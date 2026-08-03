@@ -1,0 +1,15 @@
+{
+  "name": "sector-zero",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "dev:server": "npm run dev -w apps/game-server",
+    "build": "npm run build -w packages/shared-types && npm run build -w packages/game-core && npm run build -w apps/game-server && npm run build -w apps/web",
+    "typecheck": "npm run typecheck -w packages/game-core && npm run typecheck -w apps/game-server && npm run typecheck -w apps/web",
+    "test": "npm run test -w packages/game-core"
+  }
+}
