@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Mirrors auth.users (Supabase) 1:1 — id is the Supabase auth user id, not
+/// a separately generated key. Row is created by a DB trigger on signup
+/// (see supabase/schema.sql), so the app never has to race that insert.
+model Profile {
+  id        String   @id
+  username  String   @unique
+  rating    Int      @default(1000)
+  level     Int      @default(1)
+  xp        Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  matchPlayers MatchPlayer[]
+
+  @@map("profiles")
+}
+
+model Match {
+  id          String    @id @default(uuid())
+  seed        String
+  width       Int
+  height      Int
+  mineCount   Int       @map("mine_count")
+  penaltyMode String    @map("penalty_mode")
+  ranked      Boolean   @default(false)
+  startedAt   DateTime  @map("started_at")
+  finishedAt  DateTime? @map("finished_at")
+
+  players MatchPlayer[]
+
+  @@map("matches")
+}
+
+model MatchPlayer {
+  id           String  @id @default(uuid())
+  matchId      String  @map("match_id")
+  match        Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  profileId    String? @map("profile_id")
+  profile      Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  username     String
+  placement    Int
+  finishTimeMs Int?    @map("finish_time_ms")
+  mistakes     Int
+  accuracyPct  Float   @map("accuracy_pct")
+  ratingChange Int     @map("rating_change")
+  xpGained     Int     @map("xp_gained")
+
+  @@index([profileId])
+  @@index([matchId])
+  @@map("match_players")
+}

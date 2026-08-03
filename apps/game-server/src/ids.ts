@@ -9,14 +9,6 @@ export function generateRoomCode(): string {
   return code;
 }
 
-export function generatePlayerId(): string {
-  return crypto.randomUUID();
-}
-
-export function generateReconnectToken(): string {
-  return crypto.randomUUID();
-}
-
 export function generateMatchId(): string {
   return crypto.randomUUID();
 }

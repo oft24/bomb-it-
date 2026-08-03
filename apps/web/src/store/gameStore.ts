@@ -26,7 +26,6 @@ export interface MatchInfo {
 
 interface GameStoreState {
   connectionStatus: "idle" | "connecting" | "connected" | "error";
-  username: string;
   roomId: string | null;
   hostId: string | null;
   localPlayerId: string | null;
@@ -44,7 +43,7 @@ interface GameStoreState {
   results: MatchResultRow[] | null;
   errorMessage: string | null;
 
-  connectAndJoin: (roomId: string, username: string) => void;
+  connectAndJoin: (roomId: string, accessToken: string, localPlayerId: string) => void;
   setReady: (ready: boolean) => void;
   updateSettings: (partial: Partial<MatchSettings>) => void;
   startMatch: () => void;
@@ -67,10 +66,6 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     if (listenersAttached) return;
     listenersAttached = true;
     const socket = getSocket();
-
-    socket.on("reconnect_token", ({ playerId }) => {
-      set({ localPlayerId: playerId });
-    });
 
     socket.on("room_state", ({ hostId, players, settings, state }) => {
       set({ hostId, players, settings, gameState: state, connectionStatus: "connected" });
@@ -138,7 +133,6 @@ export const useGameStore = create<GameStoreState>((set, get) => {
 
   return {
     connectionStatus: "idle",
-    username: "",
     roomId: null,
     hostId: null,
     localPlayerId: null,
@@ -156,12 +150,16 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     results: null,
     errorMessage: null,
 
-    connectAndJoin: (roomId, username) => {
+    connectAndJoin: (roomId, accessToken, localPlayerId) => {
       ensureListeners();
       const socket = getSocket();
-      set({ connectionStatus: "connecting", roomId: roomId.toUpperCase(), username });
+      set({
+        connectionStatus: "connecting",
+        roomId: roomId.toUpperCase(),
+        localPlayerId,
+      });
       if (!socket.connected) socket.connect();
-      const doJoin = () => socket.emit("join_room", { roomId: roomId.toUpperCase(), username });
+      const doJoin = () => socket.emit("join_room", { roomId: roomId.toUpperCase(), accessToken });
       if (socket.connected) doJoin();
       else socket.once("connect", doJoin);
     },

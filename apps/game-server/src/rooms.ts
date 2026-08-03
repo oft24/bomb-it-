@@ -19,8 +19,10 @@ import {
   type RoomId,
   type PlayerId,
 } from "@sectorzero/shared-types";
-import { generateMatchId, generatePlayerId, generateReconnectToken } from "./ids.js";
-import { computeRatingDelta, computeXpGained, rankForRating } from "./ranking.js";
+import { generateMatchId } from "./ids.js";
+import { computeRatingDelta, computeXpGained, levelForXp, rankForRating } from "./ranking.js";
+import { prisma } from "./db.js";
+import type { AuthedProfile } from "./auth.js";
 
 export type IOServer = Server<ClientToServerEvents, ServerToClientEvents>;
 export type IOSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -30,6 +32,7 @@ const FINISH_GRACE_MS = 25_000;
 const RATE_LIMIT_ACTIONS_PER_SEC = 20;
 
 interface PlayerSession {
+  /** Equals the Supabase auth user id — identity is proven by the access token, not by this being a secret. */
   id: PlayerId;
   username: string;
   socketId: string | null;
@@ -37,8 +40,8 @@ interface PlayerSession {
   isReady: boolean;
   rating: number;
   level: number;
+  xp: number;
   ping: number;
-  reconnectToken: string;
   disconnectTimer: NodeJS.Timeout | null;
   actionTimestamps: number[];
 }
@@ -118,40 +121,34 @@ export class GameRoom {
 
   // --- lifecycle -------------------------------------------------------------
 
-  addOrReconnectPlayer(
-    socket: IOSocket,
-    username: string,
-    reconnectToken?: string,
-  ): PlayerSession {
-    if (reconnectToken) {
-      const existing = Array.from(this.players.values()).find(
-        (p) => p.reconnectToken === reconnectToken,
-      );
-      if (existing) {
-        if (existing.disconnectTimer) {
-          clearTimeout(existing.disconnectTimer);
-          existing.disconnectTimer = null;
-        }
-        existing.socketId = socket.id;
-        existing.connected = true;
-        const runtime = this.match?.runtime.get(existing.id);
-        if (runtime && runtime.state === "DISCONNECTED") {
-          runtime.state = "PLAYING";
-        }
-        return existing;
+  /** profile.id is a Supabase-verified identity, so reconnecting is just "same id shows back up". */
+  addOrReconnectPlayer(socket: IOSocket, profile: AuthedProfile): PlayerSession {
+    const existing = this.players.get(profile.id);
+    if (existing) {
+      if (existing.disconnectTimer) {
+        clearTimeout(existing.disconnectTimer);
+        existing.disconnectTimer = null;
       }
+      existing.socketId = socket.id;
+      existing.connected = true;
+      existing.username = profile.username;
+      const runtime = this.match?.runtime.get(existing.id);
+      if (runtime && runtime.state === "DISCONNECTED") {
+        runtime.state = "PLAYING";
+      }
+      return existing;
     }
 
     const session: PlayerSession = {
-      id: generatePlayerId(),
-      username: username.slice(0, 20) || "GUEST",
+      id: profile.id,
+      username: profile.username,
       socketId: socket.id,
       connected: true,
       isReady: false,
-      rating: 1000 + Math.floor(Math.random() * 200) - 100,
-      level: 1 + Math.floor(Math.random() * 30),
+      rating: profile.rating,
+      level: profile.level,
+      xp: profile.xp,
       ping: 0,
-      reconnectToken: generateReconnectToken(),
       disconnectTimer: null,
       actionTimestamps: [],
     };
@@ -443,7 +440,11 @@ export class GameRoom {
           accuracyPct,
           didFinish,
         });
-        if (session) session.rating += ratingChange;
+        if (session) {
+          session.rating += ratingChange;
+          session.xp += xpGained;
+          session.level = levelForXp(session.xp);
+        }
 
         return {
           id: playerId,
@@ -459,6 +460,50 @@ export class GameRoom {
 
     this.state = "FINISHED";
     this.io.to(this.id).emit("match_finished", { results });
+
+    // Fire-and-forget: players already have their results, a DB hiccup shouldn't block them.
+    this.persistMatch(match, results).catch((err) => {
+      console.error(`[room ${this.id}] failed to persist match ${match.id}:`, err);
+    });
+  }
+
+  private async persistMatch(match: MatchRuntime, results: MatchResultRow[]) {
+    await prisma.match.create({
+      data: {
+        id: match.id,
+        seed: match.seed,
+        width: match.board.width,
+        height: match.board.height,
+        mineCount: match.board.mineCount,
+        penaltyMode: this.settings.penaltyMode,
+        ranked: this.settings.ranked,
+        startedAt: new Date(match.startedAt),
+        finishedAt: new Date(),
+        players: {
+          create: results.map((r) => ({
+            profileId: r.id,
+            username: r.username,
+            placement: r.placement,
+            finishTimeMs: r.finishTimeMs,
+            mistakes: r.mistakes,
+            accuracyPct: r.accuracyPct,
+            ratingChange: r.ratingChange,
+            xpGained: r.xpGained,
+          })),
+        },
+      },
+    });
+
+    await Promise.all(
+      results.map((r) => {
+        const session = this.players.get(r.id);
+        if (!session) return Promise.resolve();
+        return prisma.profile.update({
+          where: { id: r.id },
+          data: { rating: session.rating, xp: session.xp, level: session.level },
+        });
+      }),
+    );
   }
 
   broadcastProgress() {

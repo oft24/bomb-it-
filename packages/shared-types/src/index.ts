@@ -123,7 +123,9 @@ export interface MatchResultRow {
 
 // --- WebSocket event payloads (client -> server) ------------------------------
 export interface ClientToServerEvents {
-  join_room: (payload: { roomId: RoomId; username: string; reconnectToken?: string }) => void;
+  /** accessToken is a Supabase session access token — the server verifies it and
+   * derives the player's identity (id/username/rating) from the matching profile. */
+  join_room: (payload: { roomId: RoomId; accessToken: string }) => void;
   leave_room: () => void;
   set_ready: (payload: { ready: boolean }) => void;
   update_settings: (payload: Partial<MatchSettings>) => void;
@@ -148,7 +150,6 @@ export interface ServerToClientEvents {
     settings: MatchSettings;
     state: GameState;
   }) => void;
-  reconnect_token: (payload: { token: string; playerId: PlayerId }) => void;
   player_joined: (payload: { player: PublicPlayer }) => void;
   player_left: (payload: { playerId: PlayerId }) => void;
   match_countdown: (payload: { seconds: number }) => void;

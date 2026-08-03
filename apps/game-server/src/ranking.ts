@@ -42,6 +42,11 @@ export function computeRatingDelta(params: {
   return Math.round(delta);
 }
 
+/** Flat 1000 XP per level — simple and predictable, tune later once real match data exists. */
+export function levelForXp(xp: number): number {
+  return Math.floor(xp / 1000) + 1;
+}
+
 export function computeXpGained(params: {
   placement: number;
   totalPlayers: number;

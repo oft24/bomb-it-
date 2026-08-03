@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Logo, LogoMark } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
 import { RankBadge } from "@/components/ui/RankBadge";
+import { useAuthStore } from "@/store/authStore";
 import { Trophy, Users, Swords, GraduationCap, Sparkles } from "lucide-react";
 
 const NAV_ITEMS = ["Play", "Career", "Leaderboards", "Profile", "Settings"];
@@ -16,6 +17,9 @@ const MODES = [
 ];
 
 export default function HomePage() {
+  const { session, profile } = useAuthStore();
+  const playHref = session ? "/play" : "/auth?redirect=/play";
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="flex items-center justify-between border-b border-border-subtle px-8 py-4">
@@ -57,24 +61,37 @@ export default function HomePage() {
           </p>
 
           <div className="mt-2 flex items-center gap-3">
-            <Link href="/play">
+            <Link href={playHref}>
               <Button size="lg" className="min-w-48">
                 Play
               </Button>
             </Link>
           </div>
 
-          <div className="mt-4 flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-800/60 px-4 py-2.5">
-            <RankBadge rank="OPERATIVE" size="sm" />
-            <span className="h-3 w-px bg-border" />
-            <span className="font-hud text-xs text-ink-500">
-              LVL <span className="text-ink-300">14</span>
-            </span>
-            <span className="h-3 w-px bg-border" />
-            <span className="font-hud text-xs text-ink-500">
-              RATING <span className="text-ink-300">1,247</span>
-            </span>
-          </div>
+          {session ? (
+            profile && (
+              <div className="mt-4 flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-800/60 px-4 py-2.5">
+                <span className="text-xs font-semibold text-ink-100">{profile.username}</span>
+                <span className="h-3 w-px bg-border" />
+                <RankBadge rank={profile.rank} size="sm" />
+                <span className="h-3 w-px bg-border" />
+                <span className="font-hud text-xs text-ink-500">
+                  LVL <span className="text-ink-300">{profile.level}</span>
+                </span>
+                <span className="h-3 w-px bg-border" />
+                <span className="font-hud text-xs text-ink-500">
+                  RATING <span className="text-ink-300">{profile.rating.toLocaleString()}</span>
+                </span>
+              </div>
+            )
+          ) : (
+            <Link
+              href="/auth"
+              className="mt-4 text-xs font-semibold uppercase tracking-wide text-ink-500 hover:text-cyan"
+            >
+              Already have an account? Sign in
+            </Link>
+          )}
         </div>
 
         <div className="relative z-10 mt-14 grid w-full max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">

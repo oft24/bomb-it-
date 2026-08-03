@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createServer } from "node:http";
 import express from "express";
 import cors from "cors";
@@ -5,6 +6,9 @@ import { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents } from "@sectorzero/shared-types";
 import { RoomManager, type IOSocket } from "./rooms.js";
 import { generateRoomCode } from "./ids.js";
+import { verifyAccessToken } from "./auth.js";
+import { prisma } from "./db.js";
+import { rankForRating } from "./ranking.js";
 
 const PORT = Number(process.env.PORT ?? 4001);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
@@ -13,6 +17,52 @@ const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/rooms/new-code", (_req, res) => res.json({ code: generateRoomCode() }));
+
+app.get("/api/profile/me", async (req, res) => {
+  const authHeader = req.header("authorization") ?? "";
+  const accessToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const profile = await verifyAccessToken(accessToken);
+  if (!profile) {
+    res.status(401).json({ error: "Sign in to view your profile." });
+    return;
+  }
+
+  const [matchesPlayed, wins, top3, avg, best] = await Promise.all([
+    prisma.matchPlayer.count({ where: { profileId: profile.id } }),
+    prisma.matchPlayer.count({ where: { profileId: profile.id, placement: 1 } }),
+    prisma.matchPlayer.count({ where: { profileId: profile.id, placement: { lte: 3 } } }),
+    prisma.matchPlayer.aggregate({ where: { profileId: profile.id }, _avg: { placement: true } }),
+    prisma.matchPlayer.aggregate({
+      where: { profileId: profile.id, finishTimeMs: { not: null } },
+      _min: { finishTimeMs: true },
+    }),
+  ]);
+
+  res.json({
+    ...profile,
+    rank: rankForRating(profile.rating),
+    stats: {
+      matchesPlayed,
+      wins,
+      top3Finishes: top3,
+      winRatePct: matchesPlayed > 0 ? Math.round((wins / matchesPlayed) * 1000) / 10 : 0,
+      avgPlacement: avg._avg.placement != null ? Math.round(avg._avg.placement * 10) / 10 : null,
+      bestTimeMs: best._min.finishTimeMs ?? null,
+    },
+  });
+});
+
+app.get("/api/leaderboard", async (req, res) => {
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  const profiles = await prisma.profile.findMany({
+    orderBy: { rating: "desc" },
+    take: limit,
+    select: { id: true, username: true, rating: true, level: true },
+  });
+  res.json({
+    profiles: profiles.map((p) => ({ ...p, rank: rankForRating(p.rating) })),
+  });
+});
 
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
@@ -28,28 +78,37 @@ interface SocketState {
 const socketState = new WeakMap<IOSocket, SocketState>();
 
 io.on("connection", (socket: IOSocket) => {
-  socket.on("join_room", ({ roomId, username, reconnectToken }) => {
+  socket.on("join_room", async ({ roomId, accessToken }) => {
     const normalizedRoomId = roomId.trim().toUpperCase();
-    if (!normalizedRoomId || !username?.trim()) {
-      socket.emit("error_message", { code: "INVALID_JOIN", message: "Room code and username are required." });
+    if (!normalizedRoomId) {
+      socket.emit("error_message", { code: "INVALID_JOIN", message: "Room code is required." });
+      return;
+    }
+
+    const profile = await verifyAccessToken(accessToken);
+    if (!profile) {
+      socket.emit("error_message", { code: "UNAUTHORIZED", message: "Sign in to play." });
       return;
     }
 
     const room = roomManager.getOrCreate(normalizedRoomId);
-    if (room.state !== "LOBBY" && !reconnectToken) {
-      socket.emit("error_message", { code: "MATCH_IN_PROGRESS", message: "This match has already started." });
-      return;
-    }
-    if (room.players.size >= room.settings.maxPlayers && !reconnectToken) {
-      socket.emit("error_message", { code: "ROOM_FULL", message: "This room is full." });
-      return;
+    const isReturningPlayer = room.players.has(profile.id);
+
+    if (!isReturningPlayer) {
+      if (room.state !== "LOBBY") {
+        socket.emit("error_message", { code: "MATCH_IN_PROGRESS", message: "This match has already started." });
+        return;
+      }
+      if (room.players.size >= room.settings.maxPlayers) {
+        socket.emit("error_message", { code: "ROOM_FULL", message: "This room is full." });
+        return;
+      }
     }
 
-    const session = room.addOrReconnectPlayer(socket, username, reconnectToken);
+    const session = room.addOrReconnectPlayer(socket, profile);
     socketState.set(socket, { roomId: normalizedRoomId, playerId: session.id });
     socket.join(normalizedRoomId);
 
-    socket.emit("reconnect_token", { token: session.reconnectToken, playerId: session.id });
     room.broadcastRoomState();
     if (room.match && room.state === "PLAYING") room.syncMatchStateTo(socket, session.id);
   });

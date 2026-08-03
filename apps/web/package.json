@@ -12,6 +12,7 @@
   "dependencies": {
     "@sectorzero/game-core": "*",
     "@sectorzero/shared-types": "*",
+    "@supabase/supabase-js": "^2.112.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.43.0",
     "lucide-react": "^1.28.0",
