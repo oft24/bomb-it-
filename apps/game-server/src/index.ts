@@ -49,7 +49,7 @@ io.on("connection", (socket: IOSocket) => {
     socketState.set(socket, { roomId: normalizedRoomId, playerId: session.id });
     socket.join(normalizedRoomId);
 
-    socket.emit("reconnect_token", { token: session.reconnectToken });
+    socket.emit("reconnect_token", { token: session.reconnectToken, playerId: session.id });
     room.broadcastRoomState();
     if (room.match && room.state === "PLAYING") room.syncMatchStateTo(socket, session.id);
   });

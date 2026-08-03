@@ -148,7 +148,7 @@ export interface ServerToClientEvents {
     settings: MatchSettings;
     state: GameState;
   }) => void;
-  reconnect_token: (payload: { token: string }) => void;
+  reconnect_token: (payload: { token: string; playerId: PlayerId }) => void;
   player_joined: (payload: { player: PublicPlayer }) => void;
   player_left: (payload: { playerId: PlayerId }) => void;
   match_countdown: (payload: { seconds: number }) => void;

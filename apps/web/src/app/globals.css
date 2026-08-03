@@ -1,0 +1,179 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+ * SECTOR ZERO design tokens.
+ * One deliberate dark competitive surface — not a light/dark toggle.
+ * Every value below is original, not reused from Windows Minesweeper.
+ * ------------------------------------------------------------------------- */
+@theme {
+  --color-bg-950: #07080a;
+  --color-bg-900: #0b0d11;
+  --color-surface-800: #12151b;
+  --color-surface-700: #181c24;
+  --color-surface-600: #20252f;
+  --color-surface-500: #2a3038;
+
+  --color-border-subtle: #1e222a;
+  --color-border: #2b313c;
+  --color-border-strong: #3c4452;
+
+  --color-ink-100: #f1f4f9;
+  --color-ink-300: #c4cad6;
+  --color-ink-500: #8a92a3;
+  --color-ink-700: #565d6c;
+  --color-ink-900: #33383f;
+
+  --color-cyan: #3fe0ff;
+  --color-cyan-dim: #175a6b;
+  --color-violet: #9b86ff;
+  --color-blue: #5c8bff;
+
+  --color-danger: #ff5240;
+  --color-danger-dim: #4a1a15;
+  --color-warning: #ffb020;
+  --color-success: #35d99a;
+
+  --color-rank-recruit: #8a94a6;
+  --color-rank-scout: #6fce9a;
+  --color-rank-operative: #4fb8e8;
+  --color-rank-specialist: #6f8fff;
+  --color-rank-veteran: #b285ff;
+  --color-rank-elite: #ff9f4d;
+  --color-rank-phantom: #ff4d78;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --ease-game: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-snap: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --animate-cell-reveal: cell-reveal 140ms var(--ease-game) both;
+  --animate-cell-flag: cell-flag 160ms var(--ease-game) both;
+  --animate-cell-explode: cell-explode 460ms var(--ease-snap) both;
+  --animate-pulse-ring: pulse-ring 1.1s var(--ease-game) infinite;
+  --animate-rise-fade: rise-fade 900ms var(--ease-game) both;
+  --animate-count-in: count-in 320ms var(--ease-snap) both;
+}
+
+@keyframes cell-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes cell-flag {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-10deg);
+  }
+  65% {
+    transform: scale(1.12) rotate(3deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes cell-explode {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  18% {
+    transform: scale(1.22);
+    filter: brightness(2.2);
+  }
+  40% {
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(63, 224, 255, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(63, 224, 255, 0);
+  }
+}
+
+@keyframes rise-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(-10px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.98);
+  }
+}
+
+@keyframes count-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+}
+
+/* Numeric HUD readouts (timer, position, mine count) always use tabular mono. */
+.font-hud {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::selection {
+  background: var(--color-cyan);
+  color: var(--color-bg-950);
+}
+
+* {
+  scrollbar-color: var(--color-surface-500) var(--color-bg-900);
+  scrollbar-width: thin;
+}
