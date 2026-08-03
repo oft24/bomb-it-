@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: sector-zero-game-server
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build -w packages/shared-types && npm run build -w packages/game-core && npm run build -w apps/game-server
+    startCommand: node apps/game-server/dist/index.js
+    envVars:
+      - key: CLIENT_ORIGIN
+        sync: false
