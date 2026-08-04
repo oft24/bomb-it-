@@ -1,17 +1,29 @@
 services:
   - type: web
-    name: sector-zero-game-server
+    name: minesw1pe-game-server
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install && npm run build -w packages/shared-types && npm run build -w packages/game-core && npm run build -w apps/game-server
+    # --include=dev is required, not optional: Render sets NODE_ENV=production,
+    # which makes npm skip devDependencies — and the build needs typescript and
+    # the prisma CLI from there. `npm run build -w apps/game-server` runs
+    # `prisma generate` first, because the generated client is gitignored and so
+    # does not exist in a fresh clone.
+    buildCommand: npm install --include=dev && npm run build -w packages/shared-types && npm run build -w packages/game-core && npm run build -w apps/game-server
     # Run from source via tsx rather than dist/: Prisma 7's generated client uses
     # extensionless relative imports, which tsc emits verbatim and Node's ESM
     # resolver then refuses to load. `build` still runs as a typecheck gate.
     startCommand: npm run start -w apps/game-server
+    healthCheckPath: /health
     envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Comma-separated list of allowed browser origins (CORS + Socket.IO).
+      # Must include the Vercel production URL.
       - key: CLIENT_ORIGIN
         sync: false
+      # Everything below is OPTIONAL. With none of it set the server runs
+      # guest-only: real multiplayer, no sign-in, nothing persisted.
       - key: NEXT_PUBLIC_SUPABASE_URL
         sync: false
       - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY

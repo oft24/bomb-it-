@@ -28,7 +28,7 @@ Do these in order — each step's output feeds the next one's env vars.
 1. [render.com](https://render.com) → **New +** → **Blueprint** → connect
    the `oft24/bomb-it-` repo, branch `main`.
 2. Render reads `render.yaml` at the repo root and provisions
-   `sector-zero-game-server` automatically (build/start commands are already
+   `minesw1pe-game-server` automatically (build/start commands are already
    set).
 3. Set these env vars on the service (Render's dashboard → Environment):
    - `CLIENT_ORIGIN` — the Vercel URL from step 2 below (deploy once with a
@@ -47,18 +47,26 @@ Do these in order — each step's output feeds the next one's env vars.
    Omitting a Supabase/database var is a supported configuration, not a
    half-broken one: the server logs which features it's running without and
    serves guests normally.
-4. Note the resulting URL, e.g. `https://sector-zero-game-server.onrender.com`.
+4. Note the resulting URL, e.g. `https://minesw1pe-game-server.onrender.com`.
 
 (Railway or Fly.io work the same way — any host that runs a long-lived Node
 process. The equivalent manual settings: build command
-`npm install && npm run build -w packages/shared-types && npm run build -w packages/game-core && npm run build -w apps/game-server`,
+`npm install --include=dev && npm run build -w packages/shared-types && npm run build -w packages/game-core && npm run build -w apps/game-server`,
 start command `npm run start -w apps/game-server`.
 
-Note the start command runs the server from source through `tsx` rather than
-from `dist/`. Prisma 7's generated client uses extensionless relative imports,
-which `tsc` emits verbatim and Node's ESM resolver then refuses to load, so a
-`node dist/index.js` start crashes on boot. The build still runs as a
-typecheck gate.)
+Two non-obvious things are load-bearing here:
+
+- `--include=dev`. Hosts typically set `NODE_ENV=production`, which makes npm
+  skip devDependencies — and the build needs `typescript` and the `prisma` CLI
+  from there. Without it the build fails at `tsc: not found`.
+- The start command runs from source through `tsx`, not from `dist/`. Prisma 7's
+  generated client uses extensionless relative imports, which `tsc` emits
+  verbatim and Node's ESM resolver then refuses to load, so `node dist/index.js`
+  crashes on boot. The build still runs as a typecheck gate.
+
+The game-server's own `build` script runs `prisma generate` before `tsc`,
+because the generated client is gitignored and therefore absent from a fresh
+clone.)
 
 Free-tier note: Render's free web services spin down after inactivity and
 take ~30s to wake on the next request — fine for testing, not for a real
@@ -80,7 +88,7 @@ match with 30 impatient operatives.
    - `NEXT_PUBLIC_GAME_SERVER_URL` — the Render URL from step 1.
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-4. Deploy. Note the resulting URL, e.g. `https://sector-zero.vercel.app`.
+4. Deploy. Note the resulting URL, e.g. `https://sector-zero-blush.vercel.app`.
 
 ## 3. Close the loop
 
