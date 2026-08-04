@@ -127,8 +127,7 @@ export function SettingsPanel({
         </div>
         {settings.casinoMode && (
           <div className="rounded-md border border-warning/30 bg-warning/5 px-2.5 py-2 text-[11px] leading-snug text-warning">
-            Every cell you open is a bet: blackjack, roulette or dice against the
-            house. Lose the hand and the cell stays shut.
+            Random
           </div>
         )}
       </Field>
