@@ -139,7 +139,7 @@ export function ResultsView({
           <span className="text-xs text-ink-700">Waiting for host to start a rematch…</span>
         )}
         <Button size="lg" variant="secondary" onClick={onReturnToLobby}>
-          <ArrowRight className="size-4" /> Return to Lobby
+          <ArrowRight className="size-4" /> Leave Results
         </Button>
         <Button size="lg" variant="ghost" disabled>
           <FileBarChart className="size-4" /> Match Details

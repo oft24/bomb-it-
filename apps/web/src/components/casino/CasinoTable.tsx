@@ -28,6 +28,7 @@ interface CasinoTableProps {
   game: CasinoGameKind;
   /** Board coordinates of the cell being wagered on, for context in the header. */
   cell: { x: number; y: number };
+  action?: "OPEN" | "PLACE FLAG" | "REMOVE FLAG";
   onResolved: (won: boolean) => void;
 }
 
@@ -43,7 +44,7 @@ const TITLES: Record<CasinoGameKind, string> = {
  * A push returns the stake — the cell stays shut but nothing is lost, so the
  * player can simply click again.
  */
-export function CasinoTable({ game, cell, onResolved }: CasinoTableProps) {
+export function CasinoTable({ game, cell, action = "OPEN", onResolved }: CasinoTableProps) {
   const [phase, setPhase] = useState<Phase>("BET");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
@@ -55,7 +56,7 @@ export function CasinoTable({ game, cell, onResolved }: CasinoTableProps) {
       if (result === "WIN") audio.casinoWin();
       else if (result === "LOSE") audio.casinoLose();
       // Let the result land before the board takes over again.
-      setTimeout(() => onResolved(result === "WIN"), 1500);
+      setTimeout(() => onResolved(result === "WIN"), 650);
     },
     [onResolved],
   );
@@ -76,7 +77,7 @@ export function CasinoTable({ game, cell, onResolved }: CasinoTableProps) {
             {TITLES[game]}
           </h2>
           <span className="font-hud text-[11px] text-ink-500">
-            CELL {cell.x},{cell.y}
+            {action} · CELL {cell.x},{cell.y}
           </span>
         </div>
 
@@ -108,11 +109,11 @@ export function CasinoTable({ game, cell, onResolved }: CasinoTableProps) {
                       : "text-danger",
                 )}
               >
-                {outcome === "WIN" ? "Cell Opened" : outcome === "PUSH" ? "Push" : "House Wins"}
+                {outcome === "WIN" ? (action === "OPEN" ? "Cell Opened" : "Action Won") : outcome === "PUSH" ? "Push" : "House Wins"}
               </div>
               <div className="mt-0.5 text-[11px] text-ink-500">
                 {outcome === "WIN"
-                  ? "The square is yours."
+                  ? action === "OPEN" ? "The square is yours." : `${action.toLowerCase()} confirmed.`
                   : outcome === "PUSH"
                     ? "Stake returned — the cell stays shut."
                     : "The square stays shut."}
@@ -258,45 +259,35 @@ function Blackjack({ phase, setPhase, onFinish }: GameProps) {
 
 function Roulette({ phase, setPhase, onFinish }: GameProps) {
   const [result, setResult] = useState<RouletteResult | null>(null);
+  const [rotation, setRotation] = useState(0);
 
   function bet(choice: "RED" | "BLACK") {
     setPhase("RESOLVING");
     getGameAudio().spin();
     const spun = spinRoulette();
-    // Let the wheel "run" before showing the pocket.
+    setRotation((current) => current + 1440 + (36 - spun.number) * (360 / 37));
+    // Fast tournament pacing: wheel and tick sequence land together.
     setTimeout(() => {
       setResult(spun);
       onFinish(settleRoulette(choice, spun) ? "WIN" : "LOSE");
-    }, 900);
+    }, 1050);
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex h-24 items-center justify-center rounded-lg border border-border-subtle bg-bg-900">
-        {result ? (
-          <motion.div
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className={cn(
-              "flex size-16 items-center justify-center rounded-full font-hud text-2xl font-black",
-              result.color === "RED" && "bg-danger text-ink-100",
-              result.color === "BLACK" && "bg-bg-950 text-ink-100 ring-1 ring-border-strong",
-              result.color === "GREEN" && "bg-success text-bg-950",
-            )}
-          >
-            {result.number}
-          </motion.div>
-        ) : phase === "RESOLVING" ? (
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 0.5, ease: "linear" }}
-            className="size-12 rounded-full border-4 border-warning border-t-transparent"
-          />
-        ) : (
-          <span className="font-hud text-xs uppercase tracking-[0.2em] text-ink-700">
-            Place your bet
-          </span>
-        )}
+      <div className="relative flex h-52 items-center justify-center overflow-hidden rounded-xl border border-warning/20 bg-[radial-gradient(circle_at_center,#201810_0,#08090b_68%)] shadow-inner">
+        <div className="absolute top-2 z-20 h-0 w-0 border-x-[10px] border-t-[18px] border-x-transparent border-t-warning drop-shadow-[0_0_8px_rgba(255,176,32,.8)]" />
+        <motion.div animate={{ rotate: rotation }} transition={{ duration: 1.05, ease: [0.12, 0.72, 0.12, 1] }} className="relative size-40 rounded-full border-[6px] border-[#b98a3f] bg-[repeating-conic-gradient(#c9342f_0deg_9.73deg,#111318_9.73deg_19.46deg)] shadow-[0_0_0_3px_#3c2914,0_10px_35px_#000]">
+          <div className="absolute inset-[18%] rounded-full border-2 border-[#d6ad65] bg-[radial-gradient(circle,#9d722f_0_16%,#18120b_17%_44%,#bd8e43_45%_49%,#090a0c_50%)]" />
+          {ROULETTE_LABELS.map((number, index) => {
+            const angle = index * (360 / ROULETTE_LABELS.length);
+            return <span key={number} className="absolute left-1/2 top-1/2 font-hud text-[7px] font-black text-white" style={{ transform: `translate(-50%,-50%) rotate(${angle}deg) translateY(-67px) rotate(${-angle}deg)` }}>{number}</span>;
+          })}
+        </motion.div>
+        <motion.div animate={phase === "RESOLVING" ? { rotate: -1080 } : { rotate: 0 }} transition={{ duration: 1.05, ease: [0.12, 0.72, 0.12, 1] }} className="pointer-events-none absolute size-[174px] rounded-full border border-white/10">
+          <span className="absolute left-1/2 top-1 size-2.5 -translate-x-1/2 rounded-full bg-ink-100 shadow-[0_0_8px_white]" />
+        </motion.div>
+        <AnimatePresence>{result && <motion.div initial={{ opacity: 0, scale: .5 }} animate={{ opacity: 1, scale: 1 }} className={cn("absolute bottom-2 z-20 rounded-full px-3 py-1 font-hud text-sm font-black shadow-xl", result.color === "RED" && "bg-danger text-white", result.color === "BLACK" && "bg-bg-950 text-white ring-1 ring-border-strong", result.color === "GREEN" && "bg-success text-bg-950")}>{result.number}</motion.div>}</AnimatePresence>
       </div>
       <p className="text-[11px] text-ink-500">
         Single-zero wheel: 18 red, 18 black, one green. Green takes everything.
@@ -312,6 +303,8 @@ function Roulette({ phase, setPhase, onFinish }: GameProps) {
     </div>
   );
 }
+
+const ROULETTE_LABELS = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
 
 // --- Dice --------------------------------------------------------------------
 

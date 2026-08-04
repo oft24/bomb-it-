@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { Music, VolumeX } from "lucide-react";
 import { getGameAudio } from "@/lib/gameAudio";
 import { cn } from "@/lib/utils";
-
-const STORAGE_KEY = "minesw1pe:music";
+import { DEFAULT_AUDIO_SETTINGS } from "@/lib/audio/audioConfig";
 
 /**
  * Starts the soundtrack on the first click rather than on mount: browsers block
@@ -13,23 +12,14 @@ const STORAGE_KEY = "minesw1pe:music";
  * would just fail silently and leave the button lying about its state.
  */
 export function MusicToggle({ className }: { className?: string }) {
-  const [on, setOn] = useState(false);
-
-  useEffect(() => {
-    // Respect the last choice, but only re-arm it once the user interacts.
-    if (localStorage.getItem(STORAGE_KEY) !== "on") return;
-    const resume = () => {
-      setOn(getGameAudio().toggleMusic());
-      window.removeEventListener("pointerdown", resume);
-    };
-    window.addEventListener("pointerdown", resume, { once: true });
-    return () => window.removeEventListener("pointerdown", resume);
-  }, []);
+  const audio = getGameAudio();
+  const settings = useSyncExternalStore(audio.subscribeSettings, audio.getSettings, () => DEFAULT_AUDIO_SETTINGS);
+  const on = settings.musicEnabled;
 
   function handleToggle() {
-    const next = getGameAudio().toggleMusic();
-    setOn(next);
-    localStorage.setItem(STORAGE_KEY, next ? "on" : "off");
+    const next = !on;
+    audio.setSettings({ musicEnabled: next });
+    if (next) audio.startMusic();
   }
 
   return (

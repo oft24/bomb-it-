@@ -353,6 +353,7 @@ export class GameRoom {
     const session = this.players.get(playerId);
     const match = this.match;
     if (!session || !match || this.state !== "PLAYING") return;
+    if (!this.checkRateLimit(session)) return;
     const rt = match.runtime.get(playerId);
     if (!rt || rt.state !== "PLAYING") return;
     if (!inBounds(match.board, x, y)) return;

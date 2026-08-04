@@ -8,7 +8,7 @@ import { Logo } from "@/components/ui/Logo";
 
 export default function ResultsPage() {
   const router = useRouter();
-  const { results, roomId, hostId, localPlayerId, gameState, requestRematch } = useGameStore();
+  const { results, roomId, hostId, localPlayerId, gameState, requestRematch, leaveRoom } = useGameStore();
 
   useEffect(() => {
     if (!roomId) router.replace("/play");
@@ -30,7 +30,7 @@ export default function ResultsPage() {
         localPlayerId={localPlayerId}
         isHost={localPlayerId === hostId}
         onRematch={requestRematch}
-        onReturnToLobby={() => router.push("/lobby")}
+        onReturnToLobby={() => { leaveRoom(); router.push("/play"); }}
       />
     </div>
   );

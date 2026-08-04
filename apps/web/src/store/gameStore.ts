@@ -9,6 +9,7 @@ import type {
   PublicPlayer,
 } from "@sectorzero/shared-types";
 import { DEFAULT_MATCH_SETTINGS } from "@sectorzero/shared-types";
+import { getGameAudio } from "@/lib/gameAudio";
 
 export type ClientCellStatus = "closed" | "flagged" | "opened" | "exploded";
 export interface ClientCell {
@@ -87,10 +88,12 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     });
 
     socket.on("match_countdown", ({ seconds }) => {
+      getGameAudio().countdown(seconds);
       set({ countdown: seconds });
     });
 
     socket.on("match_started", (payload) => {
+      getGameAudio().startMusic();
       set({
         matchInfo: payload,
         cells: {},
@@ -105,6 +108,8 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     });
 
     socket.on("cell_result", ({ cells }) => {
+      if (cells.some((cell) => cell.mine)) getGameAudio().explosion();
+      else if (cells.length > 0) getGameAudio().tileReveal();
       set((state) => {
         const next = { ...state.cells };
         for (const c of cells) {
@@ -117,6 +122,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     });
 
     socket.on("cell_flagged", ({ x, y, flagged, minesRemaining }) => {
+      getGameAudio().flag(flagged);
       set((state) => {
         const next = { ...state.cells };
         const key = cellKey(x, y);
@@ -158,6 +164,8 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     });
 
     socket.on("match_finished", ({ results }) => {
+      const local = results.find((result) => result.id === get().localPlayerId);
+      if (local?.placement === 1) getGameAudio().victory(); else getGameAudio().lose();
       set({ results, gameState: "FINISHED" });
     });
 

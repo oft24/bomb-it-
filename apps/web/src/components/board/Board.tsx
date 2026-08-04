@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { Cell } from "./Cell";
 import type { ClientCell } from "@/store/gameStore";
 import { cn } from "@/lib/utils";
+import { getGameAudio } from "@/lib/gameAudio";
 
 interface BoardProps {
   width: number;
@@ -46,8 +47,10 @@ export function Board({
       const key = `${target.x},${target.y}`;
       const cell = cells[key];
       if (!cell || cell.status === "closed") {
+        getGameAudio().tileClick();
         onReveal(target.x, target.y);
       } else if (cell.status === "opened" && cell.adjacentMines) {
+        getGameAudio().tileClick();
         onChord(target.x, target.y);
       }
     },
@@ -63,8 +66,10 @@ export function Board({
       const key = `${target.x},${target.y}`;
       const cell = cells[key];
       if (!cell || cell.status === "closed") {
+        getGameAudio().tileClick();
         onFlag(target.x, target.y, true);
       } else if (cell.status === "flagged") {
+        getGameAudio().tileClick();
         onFlag(target.x, target.y, false);
       }
     },

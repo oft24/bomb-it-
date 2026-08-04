@@ -10,11 +10,12 @@ detonation wipes your board and you restart the same grid from zero
 
 ## Casino mode
 
-The `RANDOM` grid preset turns every click into a wager. Before a cell opens
+The `RANDOM` grid preset turns each local board action into a wager. Before a cell opens or a flag is placed/removed,
 you have to beat the house at a randomly drawn table game — blackjack (dealer
 draws to 16, stands on 17), single-zero roulette (red/black, green takes all),
-or two dice called pair/no pair. Win and the cell opens; lose and it stays
-shut; a blackjack push returns the stake and costs you nothing but time.
+or two dice called pair/no pair. Win and the requested action is applied; lose
+and the board stays unchanged. A blackjack push returns the stake and costs
+you nothing but time.
 
 It rides on the small `RECON` grid on purpose — a full-size board with a card
 game in front of every cell would take all night. The soundtrack switches to a

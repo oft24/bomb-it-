@@ -51,10 +51,6 @@ export default function MatchPage() {
   // Stingers are keyed off the tick counters so each event fires exactly once,
   // even though the surrounding state updates many times a second.
   useEffect(() => {
-    if (penaltyTick > 0) getGameAudio().explosion();
-  }, [penaltyTick]);
-
-  useEffect(() => {
     if (resetTick > 0) getGameAudio().wipe();
   }, [resetTick]);
 
@@ -65,20 +61,33 @@ export default function MatchPage() {
   // Casino mode puts a table game between the click and the reveal. The wager is
   // held here rather than in the store because it's purely local ceremony — the
   // server only ever hears about the reveal that a win produces.
-  const [wager, setWager] = useState<{ x: number; y: number; game: CasinoGameKind } | null>(null);
+  type WagerAction =
+    | { kind: "REVEAL"; x: number; y: number; game: CasinoGameKind }
+    | { kind: "FLAG"; x: number; y: number; flagged: boolean; game: CasinoGameKind };
+  const [wager, setWager] = useState<WagerAction | null>(null);
 
   function handleReveal(x: number, y: number) {
     if (!settings.casinoMode) {
       reveal(x, y);
       return;
     }
-    setWager({ x, y, game: pickCasinoGame() });
+    setWager({ kind: "REVEAL", x, y, game: pickCasinoGame() });
+  }
+
+  function handleFlag(x: number, y: number, flagged: boolean) {
+    if (!settings.casinoMode) {
+      flag(x, y, flagged);
+      return;
+    }
+    setWager({ kind: "FLAG", x, y, flagged, game: pickCasinoGame() });
   }
 
   function resolveWager(won: boolean) {
     const pending = wager;
     setWager(null);
-    if (won && pending) reveal(pending.x, pending.y);
+    if (!won || !pending) return;
+    if (pending.kind === "REVEAL") reveal(pending.x, pending.y);
+    else flag(pending.x, pending.y, pending.flagged);
   }
 
   const ranked = useMemo(() => rankPlayers(progress), [progress]);
@@ -119,7 +128,7 @@ export default function MatchPage() {
               safeZone={matchInfo.safeZone}
               interactive={interactive && !wager}
               onReveal={handleReveal}
-              onFlag={flag}
+              onFlag={handleFlag}
               onChord={chord}
             />
           </div>
@@ -153,6 +162,7 @@ export default function MatchPage() {
           key={`${wager.x},${wager.y}-${wager.game}`}
           game={wager.game}
           cell={{ x: wager.x, y: wager.y }}
+          action={wager.kind === "REVEAL" ? "OPEN" : wager.flagged ? "PLACE FLAG" : "REMOVE FLAG"}
           onResolved={resolveWager}
         />
       )}

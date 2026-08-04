@@ -3,6 +3,7 @@
 import type { MatchSettings, PenaltyMode } from "@sectorzero/shared-types";
 import { Panel, PanelHeader, PanelTitle } from "@/components/ui/Panel";
 import { cn } from "@/lib/utils";
+import { AudioSettings } from "@/components/audio/AudioSettings";
 
 interface BoardPreset {
   label: string;
@@ -183,6 +184,7 @@ export function SettingsPanel({
           onClick={() => onChange({ spectatorsAllowed: !settings.spectatorsAllowed })}
         />
       </div>
+      <AudioSettings />
     </Panel>
   );
 }

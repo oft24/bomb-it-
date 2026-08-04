@@ -22,27 +22,25 @@ export default function PlayPage() {
   const [name, setName] = useState("");
   const [pendingCode, setPendingCode] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [networkError, setNetworkError] = useState<string | null>(null);
 
   const { connectAndJoin, roomId, gameState, errorMessage, clearError } = useGameStore();
   const { session, user, profile, signOut } = useAuthStore();
 
   // Remembered per tab, so a reload doesn't make you retype it.
   useEffect(() => {
-    setName(loadGuestName());
+    const frame = requestAnimationFrame(() => setName(loadGuestName()));
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
     if (roomId && gameState === "LOBBY") router.push("/lobby");
   }, [roomId, gameState, router]);
 
-  // A failed join leaves the button stuck in its pending state otherwise.
-  useEffect(() => {
-    if (errorMessage) setSubmitting(false);
-  }, [errorMessage]);
-
   const trimmedName = name.trim();
   const canPlayAsGuest = trimmedName.length >= MIN_NAME_LENGTH;
   const ready = Boolean(session) || canPlayAsGuest;
+  const isSubmitting = submitting && !errorMessage;
 
   function identity(): JoinIdentity | null {
     if (session && user) {
@@ -56,20 +54,25 @@ export default function PlayPage() {
   async function handleCreate() {
     const id = identity();
     if (!id) return;
+    clearError();
     setSubmitting(true);
+    setNetworkError(null);
     try {
       const res = await fetch(`${SERVER_URL}/api/rooms/new-code`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
       const { code } = await res.json();
       setPendingCode(code);
       connectAndJoin(code, id);
     } catch {
       setSubmitting(false);
+      setNetworkError("The game server is waking up or unavailable. Wait a moment and try again.");
     }
   }
 
   function handleJoin() {
     const id = identity();
     if (!id || joinCode.trim().length < 4) return;
+    clearError();
     setSubmitting(true);
     connectAndJoin(joinCode.trim(), id);
   }
@@ -175,24 +178,24 @@ export default function PlayPage() {
           </>
         )}
 
-        {errorMessage && (
+        {(errorMessage || networkError) && (
           <div className="mb-4 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">
-            {errorMessage}
+            {errorMessage || networkError}
           </div>
         )}
 
         {mode === "create" ? (
-          <Button size="lg" className="w-full" onClick={handleCreate} disabled={!ready || submitting}>
-            <Plus className="size-4" /> {submitting ? (pendingCode ?? "Creating…") : "Create Room"}
+          <Button size="lg" className="w-full" onClick={handleCreate} disabled={!ready || isSubmitting}>
+            <Plus className="size-4" /> {isSubmitting ? (pendingCode ?? "Creating…") : "Create Room"}
           </Button>
         ) : (
           <Button
             size="lg"
             className="w-full"
             onClick={handleJoin}
-            disabled={!ready || joinCode.trim().length < 4 || submitting}
+            disabled={!ready || joinCode.trim().length < 4 || isSubmitting}
           >
-            <DoorOpen className="size-4" /> {submitting ? "Joining…" : "Join Room"}
+            <DoorOpen className="size-4" /> {isSubmitting ? "Joining…" : "Join Room"}
           </Button>
         )}
 

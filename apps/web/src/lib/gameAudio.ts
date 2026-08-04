@@ -7,6 +7,8 @@
  * enough to sit under a two-minute race without becoming the main event.
  */
 
+import { AUDIO_COOLDOWNS, loadAudioSettings, saveAudioSettings, type AudioSettings } from "./audio/audioConfig";
+
 export type MusicTrack = "ARCADE" | "CASINO";
 
 const BPM = 150;
@@ -49,12 +51,17 @@ export class GameAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private musicGain: GainNode | null = null;
+  private sfxGain: GainNode | null = null;
+  private settings: AudioSettings = loadAudioSettings();
+  private cooldowns = new Map<string, number>();
+  private startingMusic = false;
+  private settingsListeners = new Set<() => void>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private nextStep = 0;
   private nextNoteTime = 0;
   private noiseBuffer: AudioBuffer | null = null;
 
-  private track: MusicTrack = "ARCADE";
+  private track: MusicTrack = "CASINO";
 
   private _musicOn = false;
   get musicOn() {
@@ -81,19 +88,60 @@ export class GameAudio {
   private ensureContext(): AudioContext | null {
     if (typeof window === "undefined") return null;
     if (!this.ctx) {
-      const Ctor = window.AudioContext ?? (window as any).webkitAudioContext;
+      const safariWindow = window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
+      const Ctor = window.AudioContext ?? safariWindow.webkitAudioContext;
       if (!Ctor) return null;
       this.ctx = new Ctor();
       this.master = this.ctx.createGain();
-      this.master.gain.value = 0.5;
+      this.master.gain.value = this.settings.muted ? 0 : this.settings.master;
       this.master.connect(this.ctx.destination);
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.value = 0.16;
+      this.musicGain.gain.value = this.settings.musicEnabled ? this.settings.music * 0.8 : 0;
       this.musicGain.connect(this.master);
+      this.sfxGain = this.ctx.createGain();
+      this.sfxGain.gain.value = this.settings.sfxEnabled ? this.settings.sfx : 0;
+      this.sfxGain.connect(this.master);
       this.noiseBuffer = this.createNoiseBuffer(this.ctx);
     }
-    if (this.ctx.state === "suspended") void this.ctx.resume();
     return this.ctx;
+  }
+
+  getSettings = () => this.settings;
+  subscribeSettings = (listener: () => void) => {
+    this.settingsListeners.add(listener);
+    return () => this.settingsListeners.delete(listener);
+  };
+
+  setSettings(next: Partial<AudioSettings>) {
+    this.settings = { ...this.settings, ...next };
+    saveAudioSettings(this.settings);
+    this.settingsListeners.forEach((listener) => listener());
+    if (this.ctx && this.master && this.musicGain && this.sfxGain) {
+      const at = this.ctx.currentTime;
+      this.master.gain.setTargetAtTime(this.settings.muted ? 0 : this.settings.master, at, 0.02);
+      this.musicGain.gain.setTargetAtTime(this.settings.musicEnabled ? this.settings.music * 0.8 : 0, at, 0.02);
+      this.sfxGain.gain.setTargetAtTime(this.settings.sfxEnabled ? this.settings.sfx : 0, at, 0.02);
+    }
+    if (!this.settings.musicEnabled || this.settings.muted) this.stopMusic();
+    else this.startMusic();
+    return this.getSettings();
+  }
+
+  async unlock() {
+    const ctx = this.ensureContext();
+    if (!ctx) return false;
+    if (ctx.state === "suspended") {
+      try { await ctx.resume(); } catch { return false; }
+    }
+    return ctx.state === "running";
+  }
+
+  private allowed(name: string, cooldownMs: number) {
+    if (!this.settings.sfxEnabled || this.settings.muted) return false;
+    const now = performance.now();
+    if (now - (this.cooldowns.get(name) ?? -Infinity) < cooldownMs) return false;
+    this.cooldowns.set(name, now);
+    return true;
   }
 
   private createNoiseBuffer(ctx: AudioContext): AudioBuffer {
@@ -106,10 +154,23 @@ export class GameAudio {
 
   startMusic() {
     const ctx = this.ensureContext();
-    if (!ctx || this._musicOn) return;
+    if (!ctx || this._musicOn || this.startingMusic || !this.settings.musicEnabled) return;
+    if (ctx.state !== "running") {
+      this.startingMusic = true;
+      void ctx.resume().then(() => {
+        this.startingMusic = false;
+        if (ctx.state === "running") this.beginMusic(ctx);
+      }).catch(() => { this.startingMusic = false; });
+      return;
+    }
+    this.beginMusic(ctx);
+  }
+
+  private beginMusic(ctx: AudioContext) {
+    if (this._musicOn) return;
     this._musicOn = true;
     this.nextStep = 0;
-    this.nextNoteTime = ctx.currentTime + 0.05;
+    this.nextNoteTime = ctx.currentTime + 0.03;
     this.timer = setInterval(() => this.scheduler(), TICK_MS);
   }
 
@@ -224,14 +285,14 @@ export class GameAudio {
 
   private sfxTime(): { ctx: AudioContext; at: number } | null {
     const ctx = this.ensureContext();
-    if (!ctx || !this.master) return null;
+    if (!ctx || !this.sfxGain || !this.settings.sfxEnabled || this.settings.muted) return null;
     return { ctx, at: ctx.currentTime };
   }
 
   /** Short downward noise burst — a mine went off. */
   explosion() {
     const t = this.sfxTime();
-    if (!t || !this.noiseBuffer || !this.master) return;
+    if (!this.allowed("explosion", AUDIO_COOLDOWNS.explosion) || !t || !this.noiseBuffer || !this.sfxGain) return;
     const { ctx, at } = t;
     const src = ctx.createBufferSource();
     src.buffer = this.noiseBuffer;
@@ -242,15 +303,43 @@ export class GameAudio {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.35, at);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.4);
-    src.connect(filter).connect(gain).connect(this.master);
+    src.connect(filter).connect(gain).connect(this.sfxGain);
     src.start(at);
     src.stop(at + 0.42);
+  }
+
+  tileReveal() {
+    if (!this.allowed("tileReveal", AUDIO_COOLDOWNS.tileReveal)) return;
+    const t = this.sfxTime(); if (!t || !this.sfxGain) return;
+    this.blipTo(this.sfxGain, 920, t.at, 0.045, "sine", 0.055);
+  }
+
+  tileClick() {
+    if (!this.allowed("tileClick", 18)) return;
+    const t = this.sfxTime(); if (!t || !this.sfxGain) return;
+    this.blipTo(this.sfxGain, 560, t.at, 0.035, "triangle", 0.08);
+  }
+
+  flag(placed = true) {
+    if (!this.allowed("flag", AUDIO_COOLDOWNS.flag)) return;
+    const t = this.sfxTime(); if (!t || !this.sfxGain) return;
+    this.blipTo(this.sfxGain, placed ? 1320 : 720, t.at, 0.07, "triangle", 0.09);
+  }
+
+  countdown(value: number) {
+    const t = this.sfxTime(); if (!t || !this.sfxGain) return;
+    this.blipTo(this.sfxGain, value > 0 ? 330 + (3 - value) * 90 : 880, t.at, value > 0 ? 0.18 : 0.35, "square", value > 0 ? 0.16 : 0.22);
+  }
+
+  lose() {
+    const t = this.sfxTime(); if (!t || !this.sfxGain) return;
+    [330, 277, 220].forEach((f, i) => this.blipTo(this.sfxGain!, f, t.at + i * 0.12, 0.22, "triangle", 0.12));
   }
 
   /** Descending tone: your board just got wiped. Deliberately bleak. */
   wipe() {
     const t = this.sfxTime();
-    if (!t || !this.master) return;
+    if (!t || !this.sfxGain) return;
     const { ctx, at } = t;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -260,7 +349,7 @@ export class GameAudio {
     gain.gain.setValueAtTime(0.0001, at);
     gain.gain.exponentialRampToValueAtTime(0.22, at + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.75);
-    osc.connect(gain).connect(this.master);
+    osc.connect(gain).connect(this.sfxGain);
     osc.start(at);
     osc.stop(at + 0.78);
   }
@@ -271,7 +360,7 @@ export class GameAudio {
     if (!t) return;
     const { at } = t;
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-      this.blipTo(this.master!, f, at + i * 0.09, 0.16, "square", 0.16);
+      this.blipTo(this.sfxGain!, f, at + i * 0.09, 0.16, "square", 0.16);
     });
   }
 
@@ -280,7 +369,7 @@ export class GameAudio {
   /** Dry noise tick — a card sliding off the shoe. */
   cardDeal() {
     const t = this.sfxTime();
-    if (!t || !this.noiseBuffer || !this.master) return;
+    if (!t || !this.noiseBuffer || !this.sfxGain) return;
     const { ctx, at } = t;
     const src = ctx.createBufferSource();
     src.buffer = this.noiseBuffer;
@@ -291,7 +380,7 @@ export class GameAudio {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.18, at);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.09);
-    src.connect(filter).connect(gain).connect(this.master);
+    src.connect(filter).connect(gain).connect(this.sfxGain);
     src.start(at);
     src.stop(at + 0.1);
   }
@@ -299,12 +388,12 @@ export class GameAudio {
   /** Ticking wheel that slows as it settles. */
   spin() {
     const t = this.sfxTime();
-    if (!t || !this.master) return;
+    if (!t || !this.sfxGain) return;
     const { at } = t;
     // Ticks spaced by a widening gap — the wheel losing momentum.
     let offset = 0;
     for (let i = 0; i < 16; i++) {
-      this.blipTo(this.master, 1800 - i * 40, at + offset, 0.03, "square", 0.05);
+      this.blipTo(this.sfxGain, 1800 - i * 40, at + offset, 0.03, "square", 0.05);
       offset += 0.035 + i * 0.006;
     }
   }
@@ -312,7 +401,7 @@ export class GameAudio {
   /** Two knocks and a scatter — dice hitting the felt. */
   diceRoll() {
     const t = this.sfxTime();
-    if (!t || !this.noiseBuffer || !this.master) return;
+    if (!t || !this.noiseBuffer || !this.sfxGain) return;
     const { ctx, at } = t;
     for (const delay of [0, 0.13, 0.26, 0.34]) {
       const src = ctx.createBufferSource();
@@ -323,7 +412,7 @@ export class GameAudio {
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(0.22, at + delay);
       gain.gain.exponentialRampToValueAtTime(0.0001, at + delay + 0.07);
-      src.connect(filter).connect(gain).connect(this.master);
+      src.connect(filter).connect(gain).connect(this.sfxGain);
       src.start(at + delay);
       src.stop(at + delay + 0.08);
     }
@@ -332,20 +421,20 @@ export class GameAudio {
   /** Bright major arpeggio — the house just paid out. */
   casinoWin() {
     const t = this.sfxTime();
-    if (!t || !this.master) return;
+    if (!t || !this.sfxGain) return;
     const { at } = t;
     [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => {
-      this.blipTo(this.master!, f, at + i * 0.07, 0.14, "square", 0.13);
+      this.blipTo(this.sfxGain!, f, at + i * 0.07, 0.14, "square", 0.13);
     });
   }
 
   /** Flat minor drop — the house keeps it. */
   casinoLose() {
     const t = this.sfxTime();
-    if (!t || !this.master) return;
+    if (!t || !this.sfxGain) return;
     const { at } = t;
     [392.0, 349.23, 293.66].forEach((f, i) => {
-      this.blipTo(this.master!, f, at + i * 0.11, 0.2, "sawtooth", 0.11);
+      this.blipTo(this.sfxGain!, f, at + i * 0.11, 0.2, "sawtooth", 0.11);
     });
   }
 
