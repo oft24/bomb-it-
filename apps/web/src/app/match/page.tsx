@@ -7,8 +7,10 @@ import { Board } from "@/components/board/Board";
 import { MatchHud } from "@/components/hud/MatchHud";
 import { LiveLeaderboard } from "@/components/hud/LiveLeaderboard";
 import { PenaltyOverlay } from "@/components/hud/PenaltyOverlay";
+import { WipeOverlay } from "@/components/hud/WipeOverlay";
 import { FinishOverlay } from "@/components/hud/FinishOverlay";
 import { rankPlayers } from "@/lib/leaderboard";
+import { getGameAudio } from "@/lib/gameAudio";
 
 export default function MatchPage() {
   const router = useRouter();
@@ -24,6 +26,10 @@ export default function MatchPage() {
     gameState,
     connectionStatus,
     players,
+    settings,
+    mistakes,
+    resets,
+    resetTick,
     reveal,
     flag,
     chord,
@@ -39,6 +45,16 @@ export default function MatchPage() {
       return () => clearTimeout(id);
     }
   }, [gameState, router]);
+
+  // Stingers are keyed off the tick counters so each event fires exactly once,
+  // even though the surrounding state updates many times a second.
+  useEffect(() => {
+    if (penaltyTick > 0) getGameAudio().explosion();
+  }, [penaltyTick]);
+
+  useEffect(() => {
+    if (resetTick > 0) getGameAudio().wipe();
+  }, [resetTick]);
 
   const ranked = useMemo(() => rankPlayers(progress), [progress]);
   const localProgress = progress.find((p) => p.id === localPlayerId);
@@ -64,6 +80,8 @@ export default function MatchPage() {
         ping={localPing}
         connected={connectionStatus === "connected"}
         roomId={roomId}
+        mistakes={mistakes}
+        maxMistakes={settings.maxMistakes}
       />
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-5 overflow-hidden p-5">
@@ -82,6 +100,7 @@ export default function MatchPage() {
           </div>
 
           <PenaltyOverlay seconds={localPenaltySeconds} tick={penaltyTick} />
+          <WipeOverlay tick={resetTick} resets={resets} />
 
           {showFinish && localProgress?.finishTimeMs != null && (
             <FinishOverlay

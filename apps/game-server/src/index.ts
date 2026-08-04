@@ -6,17 +6,27 @@ import { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents } from "@sectorzero/shared-types";
 import { RoomManager, type IOSocket } from "./rooms.js";
 import { generateRoomCode } from "./ids.js";
-import { verifyAccessToken } from "./auth.js";
+import { verifyAccessToken, createGuestProfile, accountsEnabled } from "./auth.js";
 import { prisma } from "./db.js";
 import { rankForRating } from "./ranking.js";
 
 const PORT = Number(process.env.PORT ?? 4001);
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
+// Comma-separated so one server can serve the production domain and Vercel's
+// per-deploy preview URLs without a redeploy for each one.
+const CLIENT_ORIGIN = (process.env.CLIENT_ORIGIN ?? "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/rooms/new-code", (_req, res) => res.json({ code: generateRoomCode() }));
+
+/** Lets the client know which sign-in affordances this server can actually honour. */
+app.get("/api/config", (_req, res) =>
+  res.json({ accountsEnabled, persistenceEnabled: Boolean(prisma) }),
+);
 
 app.get("/api/profile/me", async (req, res) => {
   const authHeader = req.header("authorization") ?? "";
@@ -24,6 +34,10 @@ app.get("/api/profile/me", async (req, res) => {
   const profile = await verifyAccessToken(accessToken);
   if (!profile) {
     res.status(401).json({ error: "Sign in to view your profile." });
+    return;
+  }
+  if (!prisma) {
+    res.json({ ...profile, rank: rankForRating(profile.rating), stats: null });
     return;
   }
 
@@ -53,6 +67,10 @@ app.get("/api/profile/me", async (req, res) => {
 });
 
 app.get("/api/leaderboard", async (req, res) => {
+  if (!prisma) {
+    res.json({ profiles: [] });
+    return;
+  }
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
   const profiles = await prisma.profile.findMany({
     orderBy: { rating: "desc" },
@@ -78,16 +96,28 @@ interface SocketState {
 const socketState = new WeakMap<IOSocket, SocketState>();
 
 io.on("connection", (socket: IOSocket) => {
-  socket.on("join_room", async ({ roomId, accessToken }) => {
+  socket.on("join_room", async ({ roomId, accessToken, guestName, guestId }) => {
     const normalizedRoomId = roomId.trim().toUpperCase();
     if (!normalizedRoomId) {
       socket.emit("error_message", { code: "INVALID_JOIN", message: "Room code is required." });
       return;
     }
 
-    const profile = await verifyAccessToken(accessToken);
+    // A token always wins over a name: if someone is signed in, they play as
+    // themselves and their match is recorded, even if a stale name is sent too.
+    const profile = accessToken
+      ? await verifyAccessToken(accessToken)
+      : guestName
+        ? createGuestProfile(guestName, guestId)
+        : null;
+
     if (!profile) {
-      socket.emit("error_message", { code: "UNAUTHORIZED", message: "Sign in to play." });
+      socket.emit("error_message", {
+        code: "UNAUTHORIZED",
+        message: accessToken
+          ? "Your session expired. Sign in again."
+          : "Enter a name of at least 2 characters to play.",
+      });
       return;
     }
 
@@ -109,6 +139,11 @@ io.on("connection", (socket: IOSocket) => {
     socketState.set(socket, { roomId: normalizedRoomId, playerId: session.id });
     socket.join(normalizedRoomId);
 
+    socket.emit("joined_room", {
+      roomId: normalizedRoomId,
+      playerId: session.id,
+      isGuest: profile.isGuest,
+    });
     room.broadcastRoomState();
     if (room.match && room.state === "PLAYING") room.syncMatchStateTo(socket, session.id);
   });
@@ -186,5 +221,5 @@ io.on("connection", (socket: IOSocket) => {
 setInterval(() => roomManager.sweepEmptyRooms(), 60_000);
 
 httpServer.listen(PORT, () => {
-  console.log(`sector-zero game-server listening on :${PORT}`);
+  console.log(`minesw1pe game-server listening on :${PORT}`);
 });

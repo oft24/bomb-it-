@@ -21,8 +21,8 @@ export function Logo({ className, markClassName }: { className?: string; markCla
   return (
     <div className={cn("flex items-center gap-2.5", className)}>
       <LogoMark className={markClassName} />
-      <span className="text-lg font-bold tracking-[0.08em] text-ink-100">
-        SECTOR<span className="text-cyan"> ZERO</span>
+      <span className="text-lg font-bold lowercase tracking-[0.08em] text-ink-100">
+        minesw<span className="text-cyan">1</span>pe
       </span>
     </div>
   );

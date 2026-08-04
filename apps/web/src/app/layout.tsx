@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SECTOR ZERO",
-  description: "Competitive multiplayer clearance racing. Up to 30 operatives, one grid, one winner.",
+  title: "minesw1pe",
+  description: "Competitive multiplayer minesweeper racing. Up to 30 players, one grid, one winner.",
 };
 
 export default function RootLayout({

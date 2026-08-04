@@ -18,7 +18,8 @@ const MODES = [
 
 export default function HomePage() {
   const { session, profile } = useAuthStore();
-  const playHref = session ? "/play" : "/auth?redirect=/play";
+  // Playing never requires an account — /play asks for a name if you're a guest.
+  const playHref = "/play";
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -34,12 +35,7 @@ export default function HomePage() {
             </span>
           ))}
         </nav>
-        <div className="flex items-center gap-3 text-xs text-ink-500">
-          <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-success shadow-[0_0_6px_theme(colors.success)]" />
-            <span className="font-hud">4,812</span> online
-          </span>
-        </div>
+        <div className="w-24" />
       </header>
 
       <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-6 py-20">
@@ -52,12 +48,12 @@ export default function HomePage() {
           </div>
 
           <LogoMark className="size-16" />
-          <h1 className="text-5xl font-black tracking-tight text-ink-100 sm:text-6xl">
-            SECTOR<span className="text-cyan"> ZERO</span>
+          <h1 className="text-5xl font-black lowercase tracking-tight text-ink-100 sm:text-6xl">
+            minesw<span className="text-cyan">1</span>pe
           </h1>
           <p className="max-w-md text-sm leading-relaxed text-ink-500">
-            30 operatives. One identical grid. Clear it clean and clear it first —
-            everyone else is racing the same hazards, in real time.
+            30 players. One identical grid. Clear it clean and clear it first —
+            everyone else is racing the same mines, in real time.
           </p>
 
           <div className="mt-2 flex items-center gap-3">
@@ -86,10 +82,10 @@ export default function HomePage() {
             )
           ) : (
             <Link
-              href="/auth"
+              href="/auth?redirect=/play"
               className="mt-4 text-xs font-semibold uppercase tracking-wide text-ink-500 hover:text-cyan"
             >
-              Already have an account? Sign in
+              Sign in to save your stats
             </Link>
           )}
         </div>

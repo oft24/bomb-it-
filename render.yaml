@@ -5,7 +5,10 @@ services:
     plan: free
     region: oregon
     buildCommand: npm install && npm run build -w packages/shared-types && npm run build -w packages/game-core && npm run build -w apps/game-server
-    startCommand: node apps/game-server/dist/index.js
+    # Run from source via tsx rather than dist/: Prisma 7's generated client uses
+    # extensionless relative imports, which tsc emits verbatim and Node's ESM
+    # resolver then refuses to load. `build` still runs as a typecheck gate.
+    startCommand: npm run start -w apps/game-server
     envVars:
       - key: CLIENT_ORIGIN
         sync: false

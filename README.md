@@ -1,8 +1,12 @@
-# Sector Zero
+# minesw1pe
 
-Competitive multiplayer clearance racing. Up to 30 operatives get the exact
+Competitive multiplayer minesweeper racing. Up to 30 players get the exact
 same board, generated from a single server-side seed. First to clear it
 clean wins.
+
+Hitting a mine costs you a time penalty — but only five times. The sixth
+detonation wipes your board and you restart the same grid from zero
+(`maxMistakes` in the match settings; set it to 0 to disable the rule).
 
 Gameplay-wise it's inspired by the classic sweep-the-board puzzle, but the
 visual identity, board design, iconography, sounds and UI are all original —
@@ -25,10 +29,18 @@ supabase/
 `game-core` has zero framework dependencies, so it's reusable by a future
 offline/training client, and eventually a Steam build.
 
-Accounts and match history are backed by Supabase: Auth on the web client,
-Postgres (via Prisma) from the game-server. The game-server verifies every
-`join_room` against Supabase before letting a socket touch a room — there's
-no guest mode, an account is required to play.
+Playing requires nothing but a name. Guests get a throwaway server-side
+identity and play a fully real match; the only thing they give up is
+persistence — nothing about a guest match is written to the database.
+
+Accounts are the optional upgrade, backed by Supabase: Auth on the web client,
+Postgres (via Prisma) from the game-server, which verifies the access token on
+`join_room` and records the match against the player's profile. Both Supabase
+and the database are optional at the server level: with neither configured the
+game-server boots fine and runs guest-only.
+
+Guest identity lives in `sessionStorage`, so two tabs are two separate
+players — which is all you need to test a real multiplayer match locally.
 
 ## Running locally
 
@@ -53,9 +65,10 @@ npm run dev:server   # game-server on :4001
 npm run dev:web       # web app on :3000
 ```
 
-Then open `http://localhost:3000`. Create an account, then two browser tabs
-(or windows, signed in as different accounts) can create a room and join it
-with the room code to test a real multiplayer match.
+Then open `http://localhost:3000`. Type a name, create a room, and open a
+second tab with a different name to join by room code — that's a real
+multiplayer match, no accounts and no database needed. Sign-in is only
+required if you want the result saved.
 
 `/preview/lobby`, `/preview/match` and `/preview/results` render the same
 components with generated demo data (no server connection needed) — useful
@@ -69,4 +82,6 @@ npm run test -w packages/game-core
 ```
 
 Covers board-generation determinism, the shared safe-zone fairness
-guarantee, flood-fill reveal, chording, and win detection.
+guarantee, flood-fill reveal, chording (both that a fully-flagged number
+opens its remaining neighbors, and that a mis-flagged one still detonates),
+and win detection.

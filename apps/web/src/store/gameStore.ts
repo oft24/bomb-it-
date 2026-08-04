@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { getSocket } from "@/lib/socket";
+import { getGuestId } from "@/lib/guestIdentity";
 import type {
   GameState,
   MatchResultRow,
@@ -14,6 +15,11 @@ export interface ClientCell {
   status: ClientCellStatus;
   adjacentMines?: number;
 }
+
+/** Either a signed-in session token or a guest display name — never both. */
+export type JoinIdentity =
+  | { kind: "account"; accessToken: string; playerId: string }
+  | { kind: "guest"; guestName: string };
 
 export interface MatchInfo {
   matchId: string;
@@ -42,8 +48,13 @@ interface GameStoreState {
   penaltyTick: number;
   results: MatchResultRow[] | null;
   errorMessage: string | null;
+  /** Detonations on the current run — resets to 0 every time the board is wiped. */
+  mistakes: number;
+  resets: number;
+  /** Bumped on every wipe so the UI can fire a one-shot "you got wiped" overlay. */
+  resetTick: number;
 
-  connectAndJoin: (roomId: string, accessToken: string, localPlayerId: string) => void;
+  connectAndJoin: (roomId: string, identity: JoinIdentity) => void;
   setReady: (ready: boolean) => void;
   updateSettings: (partial: Partial<MatchSettings>) => void;
   startMatch: () => void;
@@ -67,6 +78,10 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     listenersAttached = true;
     const socket = getSocket();
 
+    socket.on("joined_room", ({ roomId, playerId }) => {
+      set({ roomId, localPlayerId: playerId, connectionStatus: "connected" });
+    });
+
     socket.on("room_state", ({ hostId, players, settings, state }) => {
       set({ hostId, players, settings, gameState: state, connectionStatus: "connected" });
     });
@@ -83,6 +98,8 @@ export const useGameStore = create<GameStoreState>((set, get) => {
         countdown: null,
         results: null,
         localPenaltySeconds: null,
+        mistakes: 0,
+        resets: 0,
         gameState: "PLAYING",
       });
     });
@@ -108,11 +125,32 @@ export const useGameStore = create<GameStoreState>((set, get) => {
       });
     });
 
-    socket.on("player_penalty", ({ playerId }) => {
+    socket.on("player_penalty", ({ playerId, seconds }) => {
       const { localPlayerId } = get();
       if (playerId === localPlayerId) {
-        set((state) => ({ localPenaltySeconds: 3, penaltyTick: state.penaltyTick + 1 }));
+        set((state) => ({
+          localPenaltySeconds: seconds,
+          penaltyTick: state.penaltyTick + 1,
+          mistakes: state.mistakes + 1,
+        }));
       }
+    });
+
+    socket.on("board_reset", ({ resets, safeZoneCells }) => {
+      // The server already threw this player's board away — mirror that exactly
+      // rather than merging, or stale opened cells would linger on the grid.
+      const cells: Record<string, ClientCell> = {};
+      for (const c of safeZoneCells) {
+        cells[cellKey(c.x, c.y)] = { status: "opened", adjacentMines: c.adjacentMines };
+      }
+      set((state) => ({
+        cells,
+        flaggedCount: 0,
+        mistakes: 0,
+        resets,
+        resetTick: state.resetTick + 1,
+        localPenaltySeconds: null,
+      }));
     });
 
     socket.on("player_progress", ({ progress }) => {
@@ -149,17 +187,30 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     penaltyTick: 0,
     results: null,
     errorMessage: null,
+    mistakes: 0,
+    resets: 0,
+    resetTick: 0,
 
-    connectAndJoin: (roomId, accessToken, localPlayerId) => {
+    connectAndJoin: (roomId, identity) => {
       ensureListeners();
       const socket = getSocket();
+      const code = roomId.toUpperCase();
       set({
         connectionStatus: "connecting",
-        roomId: roomId.toUpperCase(),
-        localPlayerId,
+        roomId: code,
+        // A guest's id is minted server-side; `joined_room` fills it in.
+        localPlayerId: identity.kind === "account" ? identity.playerId : null,
+        errorMessage: null,
       });
       if (!socket.connected) socket.connect();
-      const doJoin = () => socket.emit("join_room", { roomId: roomId.toUpperCase(), accessToken });
+
+      const doJoin = () =>
+        socket.emit(
+          "join_room",
+          identity.kind === "account"
+            ? { roomId: code, accessToken: identity.accessToken }
+            : { roomId: code, guestName: identity.guestName, guestId: getGuestId() },
+        );
       if (socket.connected) doJoin();
       else socket.once("connect", doJoin);
     },

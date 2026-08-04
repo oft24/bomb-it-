@@ -32,9 +32,14 @@ const FINISH_GRACE_MS = 25_000;
 const RATE_LIMIT_ACTIONS_PER_SEC = 20;
 
 interface PlayerSession {
-  /** Equals the Supabase auth user id — identity is proven by the access token, not by this being a secret. */
+  /**
+   * For an account, equals the Supabase auth user id — identity is proven by the
+   * access token, not by this being a secret. For a guest, a random `guest:<uuid>`
+   * minted at join time and valid only for the life of this room.
+   */
   id: PlayerId;
   username: string;
+  isGuest: boolean;
   socketId: string | null;
   connected: boolean;
   isReady: boolean;
@@ -53,6 +58,10 @@ interface MatchPlayerRuntime {
   placement: number | null;
   penaltyTimer: NodeJS.Timeout | null;
   ratingAtStart: number;
+  /** Wipes suffered for exceeding maxMistakes. */
+  resets: number;
+  /** Mistakes from previous runs — boardState only counts the current one. */
+  mistakesBeforeReset: number;
 }
 
 interface MatchRuntime {
@@ -94,6 +103,7 @@ export class GameRoom {
       level: p.level,
       ping: p.ping,
       connected: p.connected,
+      isGuest: p.isGuest,
     };
   }
 
@@ -142,6 +152,7 @@ export class GameRoom {
     const session: PlayerSession = {
       id: profile.id,
       username: profile.username,
+      isGuest: profile.isGuest,
       socketId: socket.id,
       connected: true,
       isReady: false,
@@ -198,6 +209,7 @@ export class GameRoom {
       boardWidth: width,
       boardHeight: height,
       mineCount: clamp(partial.mineCount ?? this.settings.mineCount, 1, maxMines),
+      maxMistakes: clamp(partial.maxMistakes ?? this.settings.maxMistakes, 0, 50),
       maxPlayers: clamp(partial.maxPlayers ?? this.settings.maxPlayers, 1, 30),
       countdownSeconds: clamp(partial.countdownSeconds ?? this.settings.countdownSeconds, 0, 10),
     };
@@ -250,6 +262,8 @@ export class GameRoom {
         placement: null,
         penaltyTimer: null,
         ratingAtStart: p.rating,
+        resets: 0,
+        mistakesBeforeReset: 0,
       });
     }
 
@@ -278,7 +292,7 @@ export class GameRoom {
 
     // The shared safe zone is guaranteed mine-free — open it for everyone immediately.
     for (const [playerId, rt] of runtime) {
-      const { cells } = rt.boardState.reveal(safeZone[0].x, safeZone[0].y);
+      const cells = this.openSafeZoneFor(playerId, rt);
       const socket = this.socketFor(playerId);
       if (socket && cells.length > 0) socket.emit("cell_result", { cells });
     }
@@ -358,6 +372,14 @@ export class GameRoom {
       return;
     }
 
+    // Past the forgiveness budget there's no time penalty to serve — the run is
+    // wiped and they start the same grid over from nothing.
+    const { maxMistakes } = this.settings;
+    if (maxMistakes > 0 && rt.boardState.mistakes > maxMistakes) {
+      this.resetPlayerBoard(playerId, rt);
+      return;
+    }
+
     const seconds = mode === "CHAOS" ? 1 : this.settings.penaltySeconds;
     rt.state = "PENALTY";
     this.io.to(this.id).emit("player_penalty", { playerId, seconds, reason: "MINE" });
@@ -367,6 +389,44 @@ export class GameRoom {
       if (rt.state === "PENALTY") rt.state = "PLAYING";
       this.broadcastProgress();
     }, seconds * 1000);
+  }
+
+  /** Opens the guaranteed mine-free starting pocket and pushes it to the player. */
+  private openSafeZoneFor(playerId: PlayerId, rt: MatchPlayerRuntime) {
+    const match = this.match;
+    if (!match) return [];
+    const { cells } = rt.boardState.reveal(match.safeZone[0].x, match.safeZone[0].y);
+    return cells;
+  }
+
+  /**
+   * Wipes a player's progress after they burn through the mistake budget. The
+   * grid itself is untouched — every racer must stay on the same board — so only
+   * this player's revealed/flagged state is thrown away and rebuilt.
+   */
+  private resetPlayerBoard(playerId: PlayerId, rt: MatchPlayerRuntime) {
+    const match = this.match;
+    if (!match) return;
+
+    if (rt.penaltyTimer) {
+      clearTimeout(rt.penaltyTimer);
+      rt.penaltyTimer = null;
+    }
+    rt.mistakesBeforeReset += rt.boardState.mistakes;
+    rt.resets += 1;
+    rt.boardState = new PlayerBoardState(match.board);
+    rt.state = "PLAYING";
+
+    const safeZoneCells = this.openSafeZoneFor(playerId, rt);
+    this.socketFor(playerId)?.emit("board_reset", {
+      reason: "TOO_MANY_MISTAKES",
+      mistakes: rt.mistakesBeforeReset,
+      resets: rt.resets,
+      safeZoneCells,
+    });
+    // Deliberately no `player_penalty` here: a wipe is not a timed penalty, and
+    // the rest of the room learns about it from the progress broadcast instead.
+    this.broadcastProgress();
   }
 
   private finishPlayer(playerId: PlayerId, rt: MatchPlayerRuntime) {
@@ -419,10 +479,10 @@ export class GameRoom {
       .sort((a, b) => (a[1].placement ?? Infinity) - (b[1].placement ?? Infinity))
       .map(([playerId, rt]) => {
         const session = this.players.get(playerId);
-        const totalSafe = match.board.width * match.board.height - match.board.mineCount;
         const opened = rt.boardState.revealedNonMineCount();
-        const accuracyPct = opened + rt.boardState.mistakes > 0
-          ? (opened / (opened + rt.boardState.mistakes)) * 100
+        const totalMistakes = rt.mistakesBeforeReset + rt.boardState.mistakes;
+        const accuracyPct = opened + totalMistakes > 0
+          ? (opened / (opened + totalMistakes)) * 100
           : 100;
         const didFinish = rt.state === "FINISHED";
         const ratingChange = this.settings.ranked
@@ -451,7 +511,7 @@ export class GameRoom {
           username: session?.username ?? "UNKNOWN",
           placement: rt.placement ?? totalPlayers,
           finishTimeMs: rt.finishTimeMs,
-          mistakes: rt.boardState.mistakes,
+          mistakes: totalMistakes,
           accuracyPct: Math.round(accuracyPct * 10) / 10,
           ratingChange,
           xpGained,
@@ -468,6 +528,13 @@ export class GameRoom {
   }
 
   private async persistMatch(match: MatchRuntime, results: MatchResultRow[]) {
+    if (!prisma) return;
+
+    // Guests have no `profiles` row to point a foreign key at, and by design
+    // leave no trace. Their results were already delivered over the socket.
+    const persistable = results.filter((r) => !this.players.get(r.id)?.isGuest);
+    if (persistable.length === 0) return;
+
     await prisma.match.create({
       data: {
         id: match.id,
@@ -480,7 +547,7 @@ export class GameRoom {
         startedAt: new Date(match.startedAt),
         finishedAt: new Date(),
         players: {
-          create: results.map((r) => ({
+          create: persistable.map((r) => ({
             profileId: r.id,
             username: r.username,
             placement: r.placement,
@@ -495,10 +562,10 @@ export class GameRoom {
     });
 
     await Promise.all(
-      results.map((r) => {
+      persistable.map((r) => {
         const session = this.players.get(r.id);
         if (!session) return Promise.resolve();
-        return prisma.profile.update({
+        return prisma!.profile.update({
           where: { id: r.id },
           data: { rating: session.rating, xp: session.xp, level: session.level },
         });
@@ -516,8 +583,9 @@ export class GameRoom {
         username: session?.username ?? "UNKNOWN",
         rank: rankForRating(session?.rating ?? 1000),
         progressPct: Math.round(rt.boardState.progressPct() * 10) / 10,
-        mistakes: rt.boardState.mistakes,
+        mistakes: rt.mistakesBeforeReset + rt.boardState.mistakes,
         streak: rt.boardState.streak,
+        resets: rt.resets,
         state: rt.state,
         finishTimeMs: rt.finishTimeMs,
         placement: rt.placement,

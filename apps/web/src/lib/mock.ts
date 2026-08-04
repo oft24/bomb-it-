@@ -1,3 +1,5 @@
+// Demo data for the /preview/* design-QA routes ONLY. A real match renders
+// exclusively from server-pushed progress — nothing here ever reaches it.
 import { RANK_TIERS } from "@sectorzero/shared-types";
 import type {
   MatchResultRow,
@@ -29,6 +31,7 @@ export function mockPlayers(count: number, localName = "You"): PublicPlayer[] {
     level: 1 + ((i * 7) % 60),
     ping: 12 + ((i * 23) % 90),
     connected: i !== count - 2,
+    isGuest: i % 3 === 1,
   }));
   players[Math.min(count - 1, 4)] = {
     ...players[Math.min(count - 1, 4)],
@@ -48,6 +51,7 @@ export function mockProgress(count: number, localName = "You"): PlayerProgress[]
       progressPct: Math.max(0, 92 - i * 3.1 + ((i * 13) % 7)),
       mistakes: i % 5,
       streak: (i * 3) % 20,
+      resets: i % 7 === 3 ? 1 : 0,
       state: (i === count - 2 ? "DISCONNECTED" : i % 9 === 0 ? "PENALTY" : "PLAYING") as PlayerProgress["state"],
       finishTimeMs: null,
       placement: null,

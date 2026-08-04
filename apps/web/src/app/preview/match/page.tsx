@@ -6,6 +6,7 @@ import { Board } from "@/components/board/Board";
 import { MatchHud } from "@/components/hud/MatchHud";
 import { LiveLeaderboard } from "@/components/hud/LiveLeaderboard";
 import { PenaltyOverlay } from "@/components/hud/PenaltyOverlay";
+import { WipeOverlay } from "@/components/hud/WipeOverlay";
 import { FinishOverlay } from "@/components/hud/FinishOverlay";
 import type { ClientCell } from "@/store/gameStore";
 import { mockProgress } from "@/lib/mock";
@@ -13,6 +14,7 @@ import { mockProgress } from "@/lib/mock";
 const WIDTH = 24;
 const HEIGHT = 24;
 const MINE_COUNT = 99;
+const MAX_MISTAKES = 5;
 
 /** Fully playable single-client demo of the match screen, driven by game-core directly. */
 export default function MatchPreviewPage() {
@@ -29,6 +31,9 @@ export default function MatchPreviewPage() {
   const [progressPct, setProgressPct] = useState(0);
   const [flaggedCount, setFlaggedCount] = useState(0);
   const [penaltyTick, setPenaltyTick] = useState(0);
+  const [mistakes, setMistakes] = useState(0);
+  const [resets, setResets] = useState(0);
+  const [resetTick, setResetTick] = useState(0);
   const [finished, setFinished] = useState<{ placement: number; finishTimeMs: number } | null>(null);
 
   useEffect(() => {
@@ -43,12 +48,32 @@ export default function MatchPreviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Mirrors the server rule: past the budget the board is wiped, not forgiven. */
+  function wipeBoard() {
+    const state = new PlayerBoardState(board);
+    stateRef.current = state;
+    const { cells: revealed } = state.reveal(safeZone[0].x, safeZone[0].y);
+    setCells(mergeRevealed({}, revealed));
+    setProgressPct(state.progressPct());
+    setFlaggedCount(0);
+    setMistakes(0);
+    setResets((r) => r + 1);
+    setResetTick((t) => t + 1);
+  }
+
   function applyOutcome(revealed: ReturnType<PlayerBoardState["reveal"]>["cells"], hitMine: boolean) {
     const state = stateRef.current!;
     if (revealed.length > 0) setCells((prev) => mergeRevealed(prev, revealed));
     setProgressPct(state.progressPct());
-    if (hitMine) setPenaltyTick((t) => t + 1);
-    else if (state.hasWon() && startedAt != null) {
+    if (hitMine) {
+      const next = mistakes + 1;
+      if (next > MAX_MISTAKES) {
+        wipeBoard();
+        return;
+      }
+      setMistakes(next);
+      setPenaltyTick((t) => t + 1);
+    } else if (state.hasWon() && startedAt != null) {
       setFinished({ placement: 1, finishTimeMs: Date.now() - startedAt });
     }
   }
@@ -87,6 +112,8 @@ export default function MatchPreviewPage() {
         ping={31}
         connected
         roomId="7KQ9XZ"
+        mistakes={mistakes}
+        maxMistakes={MAX_MISTAKES}
       />
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-5 overflow-hidden p-5">
@@ -105,6 +132,7 @@ export default function MatchPreviewPage() {
           </div>
 
           <PenaltyOverlay seconds={3} tick={penaltyTick} />
+          <WipeOverlay tick={resetTick} resets={resets} />
 
           {finished && (
             <FinishOverlay

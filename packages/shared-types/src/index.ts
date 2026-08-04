@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// SECTOR ZERO — shared realtime contracts between web client and game-server.
+// minesw1pe — shared realtime contracts between web client and game-server.
 // This package intentionally has zero runtime deps: pure type + tiny const defs
 // so it can be reused unchanged by a future Steam/desktop client.
 // -----------------------------------------------------------------------------
@@ -33,6 +33,12 @@ export interface MatchSettings {
   maxPlayers: number;
   penaltyMode: PenaltyMode;
   penaltySeconds: number; // used when penaltyMode === "RACE"
+  /**
+   * How many detonations a player is forgiven with a time penalty. Exceeding it
+   * wipes their board and restarts them from zero on the same grid. 0 disables
+   * the rule (penalties stay forgiving forever).
+   */
+  maxMistakes: number;
   timeLimitSeconds: number | null;
   ranked: boolean;
   spectatorsAllowed: boolean;
@@ -46,6 +52,7 @@ export const DEFAULT_MATCH_SETTINGS: MatchSettings = {
   maxPlayers: 30,
   penaltyMode: "RACE",
   penaltySeconds: 3,
+  maxMistakes: 5,
   timeLimitSeconds: null,
   ranked: false,
   spectatorsAllowed: true,
@@ -95,6 +102,8 @@ export interface PublicPlayer {
   level: number;
   ping: number;
   connected: boolean;
+  /** Name-only player with no account: plays for real, but nothing is persisted. */
+  isGuest: boolean;
 }
 
 /** What every client sees about every OTHER player during a match — never the board. */
@@ -105,6 +114,8 @@ export interface PlayerProgress {
   progressPct: number;
   mistakes: number;
   streak: number;
+  /** Times this player blew past maxMistakes and got wiped back to zero. */
+  resets: number;
   state: PlayerMatchState;
   finishTimeMs: number | null;
   placement: number | null;
@@ -123,9 +134,22 @@ export interface MatchResultRow {
 
 // --- WebSocket event payloads (client -> server) ------------------------------
 export interface ClientToServerEvents {
-  /** accessToken is a Supabase session access token — the server verifies it and
-   * derives the player's identity (id/username/rating) from the matching profile. */
-  join_room: (payload: { roomId: RoomId; accessToken: string }) => void;
+  /**
+   * Two ways in, and exactly one must be supplied:
+   *  - `accessToken`: a Supabase session token. The server verifies it and derives
+   *    the player's identity (id/username/rating) from the matching profile.
+   *  - `guestName`: a display name only. The server mints a throwaway identity;
+   *    the match is played for real but nothing about it is persisted.
+   *
+   * `guestId` is echoed back from a previous `joined_room` so a guest who
+   * reloads mid-match reconnects as the same player instead of a new one.
+   */
+  join_room: (payload: {
+    roomId: RoomId;
+    accessToken?: string;
+    guestName?: string;
+    guestId?: string;
+  }) => void;
   leave_room: () => void;
   set_ready: (payload: { ready: boolean }) => void;
   update_settings: (payload: Partial<MatchSettings>) => void;
@@ -143,6 +167,12 @@ export interface ClientToServerAckEvents {
 
 // --- WebSocket event payloads (server -> client) ------------------------------
 export interface ServerToClientEvents {
+  /**
+   * Confirms the join and tells the client which player it is. Guests can't know
+   * this up front — the id is minted server-side — so nothing that depends on
+   * "which row is me" should run before this arrives.
+   */
+  joined_room: (payload: { roomId: RoomId; playerId: PlayerId; isGuest: boolean }) => void;
   room_state: (payload: {
     roomId: RoomId;
     hostId: PlayerId;
@@ -164,6 +194,17 @@ export interface ServerToClientEvents {
   cell_result: (payload: { cells: CellResult[] }) => void;
   cell_flagged: (payload: { x: number; y: number; flagged: boolean; minesRemaining: number }) => void;
   player_penalty: (payload: { playerId: PlayerId; seconds: number; reason: "MINE" }) => void;
+  /**
+   * Sent to a single player who exceeded maxMistakes: their board is wiped and
+   * they restart from zero on the same grid. The client must clear every cell it
+   * is showing and re-apply `safeZoneCells`, which the server has already reopened.
+   */
+  board_reset: (payload: {
+    reason: "TOO_MANY_MISTAKES";
+    mistakes: number;
+    resets: number;
+    safeZoneCells: CellResult[];
+  }) => void;
   player_progress: (payload: { progress: PlayerProgress[] }) => void;
   player_finished: (payload: { playerId: PlayerId; placement: number; finishTimeMs: number }) => void;
   match_finished: (payload: { results: MatchResultRow[] }) => void;
