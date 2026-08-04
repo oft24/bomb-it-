@@ -210,6 +210,7 @@ export class GameRoom {
       boardHeight: height,
       mineCount: clamp(partial.mineCount ?? this.settings.mineCount, 1, maxMines),
       maxMistakes: clamp(partial.maxMistakes ?? this.settings.maxMistakes, 0, 50),
+      casinoMode: Boolean(partial.casinoMode ?? this.settings.casinoMode),
       maxPlayers: clamp(partial.maxPlayers ?? this.settings.maxPlayers, 1, 30),
       countdownSeconds: clamp(partial.countdownSeconds ?? this.settings.countdownSeconds, 0, 10),
     };

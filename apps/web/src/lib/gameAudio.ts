@@ -7,10 +7,16 @@
  * enough to sit under a two-minute race without becoming the main event.
  */
 
+export type MusicTrack = "ARCADE" | "CASINO";
+
 const BPM = 150;
 const SIXTEENTH = 60 / BPM / 4;
 const BAR_SIXTEENTHS = 16;
 const LOOP_SIXTEENTHS = BAR_SIXTEENTHS * 4;
+
+// The casino lounge runs slower and swings, so it gets its own clock.
+const CASINO_BPM = 108;
+const CASINO_SIXTEENTH = 60 / CASINO_BPM / 4;
 
 // Scheduler: queue a little ahead of the clock so timing survives a busy main
 // thread, and re-check often enough that the queue never runs dry.
@@ -27,6 +33,18 @@ const A_MINOR_PROGRESSION = [
 /** Which 16ths of a bar the hats land on — off-beats, for forward drive. */
 const HAT_STEPS = [2, 6, 10, 14];
 
+// Lounge turnaround: Dm7 - G7 - Cmaj7 - A7. Bass walks the four quarter notes of
+// each bar; the chord is stabbed on the off-beats behind it.
+const CASINO_PROGRESSION = [
+  { walk: [146.83, 174.61, 220.0, 261.63], chord: [293.66, 349.23, 440.0] }, // Dm7
+  { walk: [196.0, 246.94, 293.66, 349.23], chord: [246.94, 293.66, 349.23] }, // G7
+  { walk: [130.81, 164.81, 196.0, 246.94], chord: [261.63, 329.63, 392.0] }, // Cmaj7
+  { walk: [220.0, 277.18, 329.63, 392.0], chord: [277.18, 329.63, 392.0] }, // A7
+];
+
+/** Off-beat comp stabs, giving the lounge feel its lilt. */
+const CASINO_STAB_STEPS = [3, 7, 11, 15];
+
 export class GameAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -36,9 +54,27 @@ export class GameAudio {
   private nextNoteTime = 0;
   private noiseBuffer: AudioBuffer | null = null;
 
+  private track: MusicTrack = "ARCADE";
+
   private _musicOn = false;
   get musicOn() {
     return this._musicOn;
+  }
+
+  /**
+   * Swaps the soundtrack without interrupting playback. The step cursor resets
+   * so the new pattern starts on its own downbeat instead of halfway through a
+   * bar it never played.
+   */
+  setTrack(track: MusicTrack) {
+    if (this.track === track) return;
+    this.track = track;
+    this.nextStep = 0;
+    if (this.ctx && this._musicOn) this.nextNoteTime = this.ctx.currentTime + 0.05;
+  }
+
+  private stepSeconds(): number {
+    return this.track === "CASINO" ? CASINO_SIXTEENTH : SIXTEENTH;
   }
 
   /** Must be called from a user gesture — browsers won't start audio otherwise. */
@@ -95,10 +131,31 @@ export class GameAudio {
     const ctx = this.ctx;
     if (!ctx || !this._musicOn) return;
     while (this.nextNoteTime < ctx.currentTime + LOOKAHEAD_S) {
-      this.scheduleStep(this.nextStep, this.nextNoteTime);
+      if (this.track === "CASINO") this.scheduleCasinoStep(this.nextStep, this.nextNoteTime);
+      else this.scheduleStep(this.nextStep, this.nextNoteTime);
       this.nextStep = (this.nextStep + 1) % LOOP_SIXTEENTHS;
-      this.nextNoteTime += SIXTEENTH;
+      this.nextNoteTime += this.stepSeconds();
     }
+  }
+
+  private scheduleCasinoStep(step: number, time: number) {
+    const bar = Math.floor(step / BAR_SIXTEENTHS);
+    const inBar = step % BAR_SIXTEENTHS;
+    const { walk, chord } = CASINO_PROGRESSION[bar];
+
+    // Upright-ish walking bass on every quarter note.
+    if (inBar % 4 === 0) {
+      this.blip(walk[inBar / 4], time, 0.3, "triangle", 0.15);
+    }
+
+    // Chord stabs answering the bass on the off-beats.
+    if (CASINO_STAB_STEPS.includes(inBar)) {
+      for (const note of chord) this.blip(note, time, 0.16, "sawtooth", 0.035);
+    }
+
+    // Ride pattern with a swung second stroke.
+    if (inBar % 4 === 0) this.hat(time, 0.016);
+    if (inBar % 4 === 2) this.hat(time + this.stepSeconds() * 0.4, 0.011);
   }
 
   private scheduleStep(step: number, time: number) {
@@ -215,6 +272,80 @@ export class GameAudio {
     const { at } = t;
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
       this.blipTo(this.master!, f, at + i * 0.09, 0.16, "square", 0.16);
+    });
+  }
+
+  // --- casino stingers -------------------------------------------------------
+
+  /** Dry noise tick — a card sliding off the shoe. */
+  cardDeal() {
+    const t = this.sfxTime();
+    if (!t || !this.noiseBuffer || !this.master) return;
+    const { ctx, at } = t;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 2600;
+    filter.Q.value = 0.8;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.18, at);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.09);
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(at);
+    src.stop(at + 0.1);
+  }
+
+  /** Ticking wheel that slows as it settles. */
+  spin() {
+    const t = this.sfxTime();
+    if (!t || !this.master) return;
+    const { at } = t;
+    // Ticks spaced by a widening gap — the wheel losing momentum.
+    let offset = 0;
+    for (let i = 0; i < 16; i++) {
+      this.blipTo(this.master, 1800 - i * 40, at + offset, 0.03, "square", 0.05);
+      offset += 0.035 + i * 0.006;
+    }
+  }
+
+  /** Two knocks and a scatter — dice hitting the felt. */
+  diceRoll() {
+    const t = this.sfxTime();
+    if (!t || !this.noiseBuffer || !this.master) return;
+    const { ctx, at } = t;
+    for (const delay of [0, 0.13, 0.26, 0.34]) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = 900 + Math.random() * 700;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.22, at + delay);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + delay + 0.07);
+      src.connect(filter).connect(gain).connect(this.master);
+      src.start(at + delay);
+      src.stop(at + delay + 0.08);
+    }
+  }
+
+  /** Bright major arpeggio — the house just paid out. */
+  casinoWin() {
+    const t = this.sfxTime();
+    if (!t || !this.master) return;
+    const { at } = t;
+    [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => {
+      this.blipTo(this.master!, f, at + i * 0.07, 0.14, "square", 0.13);
+    });
+  }
+
+  /** Flat minor drop — the house keeps it. */
+  casinoLose() {
+    const t = this.sfxTime();
+    if (!t || !this.master) return;
+    const { at } = t;
+    [392.0, 349.23, 293.66].forEach((f, i) => {
+      this.blipTo(this.master!, f, at + i * 0.11, 0.2, "sawtooth", 0.11);
     });
   }
 

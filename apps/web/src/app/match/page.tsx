@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { pickCasinoGame, type CasinoGameKind } from "@sectorzero/game-core";
 import { useGameStore } from "@/store/gameStore";
+import { CasinoTable } from "@/components/casino/CasinoTable";
 import { Board } from "@/components/board/Board";
 import { MatchHud } from "@/components/hud/MatchHud";
 import { LiveLeaderboard } from "@/components/hud/LiveLeaderboard";
@@ -56,6 +58,29 @@ export default function MatchPage() {
     if (resetTick > 0) getGameAudio().wipe();
   }, [resetTick]);
 
+  useEffect(() => {
+    getGameAudio().setTrack(settings.casinoMode ? "CASINO" : "ARCADE");
+  }, [settings.casinoMode]);
+
+  // Casino mode puts a table game between the click and the reveal. The wager is
+  // held here rather than in the store because it's purely local ceremony — the
+  // server only ever hears about the reveal that a win produces.
+  const [wager, setWager] = useState<{ x: number; y: number; game: CasinoGameKind } | null>(null);
+
+  function handleReveal(x: number, y: number) {
+    if (!settings.casinoMode) {
+      reveal(x, y);
+      return;
+    }
+    setWager({ x, y, game: pickCasinoGame() });
+  }
+
+  function resolveWager(won: boolean) {
+    const pending = wager;
+    setWager(null);
+    if (won && pending) reveal(pending.x, pending.y);
+  }
+
   const ranked = useMemo(() => rankPlayers(progress), [progress]);
   const localProgress = progress.find((p) => p.id === localPlayerId);
   const position = Math.max(1, ranked.findIndex((p) => p.id === localPlayerId) + 1);
@@ -92,8 +117,8 @@ export default function MatchPage() {
               height={matchInfo.height}
               cells={cells}
               safeZone={matchInfo.safeZone}
-              interactive={interactive}
-              onReveal={reveal}
+              interactive={interactive && !wager}
+              onReveal={handleReveal}
               onFlag={flag}
               onChord={chord}
             />
@@ -122,6 +147,15 @@ export default function MatchPage() {
 
         <LiveLeaderboard progress={progress} localPlayerId={localPlayerId} className="hidden w-72 lg:flex" />
       </div>
+
+      {wager && (
+        <CasinoTable
+          key={`${wager.x},${wager.y}-${wager.game}`}
+          game={wager.game}
+          cell={{ x: wager.x, y: wager.y }}
+          onResolved={resolveWager}
+        />
+      )}
     </div>
   );
 }

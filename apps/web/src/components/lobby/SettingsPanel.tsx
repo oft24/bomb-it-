@@ -4,10 +4,29 @@ import type { MatchSettings, PenaltyMode } from "@sectorzero/shared-types";
 import { Panel, PanelHeader, PanelTitle } from "@/components/ui/Panel";
 import { cn } from "@/lib/utils";
 
-const BOARD_PRESETS: { label: string; width: number; height: number; mineCount: number }[] = [
-  { label: "RECON", width: 12, height: 12, mineCount: 20 },
-  { label: "STANDARD", width: 24, height: 24, mineCount: 99 },
-  { label: "SIEGE", width: 30, height: 24, mineCount: 180 },
+interface BoardPreset {
+  label: string;
+  width: number;
+  height: number;
+  mineCount: number;
+  casinoMode: boolean;
+  hint: string;
+}
+
+// RANDOM rides on the RECON grid deliberately: with a table game between you and
+// every single cell, a full-size board would take all night.
+const BOARD_PRESETS: BoardPreset[] = [
+  { label: "RECON", width: 12, height: 12, mineCount: 20, casinoMode: false, hint: "Small and quick" },
+  { label: "STANDARD", width: 24, height: 24, mineCount: 99, casinoMode: false, hint: "The classic race" },
+  { label: "SIEGE", width: 30, height: 24, mineCount: 180, casinoMode: false, hint: "Long and brutal" },
+  {
+    label: "RANDOM",
+    width: 12,
+    height: 12,
+    mineCount: 20,
+    casinoMode: true,
+    hint: "Casino mode — beat the house to open each cell",
+  },
 ];
 
 const PENALTY_OPTIONS: { value: PenaltyMode; label: string; hint: string }[] = [
@@ -58,8 +77,13 @@ export function SettingsPanel({
   editable: boolean;
   onChange: (partial: Partial<MatchSettings>) => void;
 }) {
+  // RECON and RANDOM share a grid, so casinoMode is what tells them apart.
   const activePreset = BOARD_PRESETS.find(
-    (p) => p.width === settings.boardWidth && p.height === settings.boardHeight && p.mineCount === settings.mineCount,
+    (p) =>
+      p.width === settings.boardWidth &&
+      p.height === settings.boardHeight &&
+      p.mineCount === settings.mineCount &&
+      p.casinoMode === settings.casinoMode,
   )?.label;
 
   return (
@@ -70,18 +94,26 @@ export function SettingsPanel({
       </PanelHeader>
 
       <Field label="Grid">
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {BOARD_PRESETS.map((preset) => (
             <button
               key={preset.label}
               disabled={!editable}
+              title={preset.hint}
               onClick={() =>
-                onChange({ boardWidth: preset.width, boardHeight: preset.height, mineCount: preset.mineCount })
+                onChange({
+                  boardWidth: preset.width,
+                  boardHeight: preset.height,
+                  mineCount: preset.mineCount,
+                  casinoMode: preset.casinoMode,
+                })
               }
               className={cn(
                 "flex-1 rounded-md border px-2 py-2 text-xs font-bold uppercase tracking-wide transition-colors",
                 activePreset === preset.label
-                  ? "border-cyan/50 bg-cyan/10 text-cyan"
+                  ? preset.casinoMode
+                    ? "border-warning/60 bg-warning/10 text-warning"
+                    : "border-cyan/50 bg-cyan/10 text-cyan"
                   : "border-border-subtle bg-surface-700 text-ink-500 hover:text-ink-300",
                 !editable && "pointer-events-none",
               )}
@@ -91,8 +123,14 @@ export function SettingsPanel({
           ))}
         </div>
         <div className="font-hud text-xs text-ink-500">
-          {settings.boardWidth} × {settings.boardHeight} — {settings.mineCount} hazards
+          {settings.boardWidth} × {settings.boardHeight} — {settings.mineCount} mines
         </div>
+        {settings.casinoMode && (
+          <div className="rounded-md border border-warning/30 bg-warning/5 px-2.5 py-2 text-[11px] leading-snug text-warning">
+            Every cell you open is a bet: blackjack, roulette or dice against the
+            house. Lose the hand and the cell stays shut.
+          </div>
+        )}
       </Field>
 
       <Field label={`Max Operatives — ${settings.maxPlayers}`}>

@@ -8,6 +8,26 @@ Hitting a mine costs you a time penalty — but only five times. The sixth
 detonation wipes your board and you restart the same grid from zero
 (`maxMistakes` in the match settings; set it to 0 to disable the rule).
 
+## Casino mode
+
+The `RANDOM` grid preset turns every click into a wager. Before a cell opens
+you have to beat the house at a randomly drawn table game — blackjack (dealer
+draws to 16, stands on 17), single-zero roulette (red/black, green takes all),
+or two dice called pair/no pair. Win and the cell opens; lose and it stays
+shut; a blackjack push returns the stake and costs you nothing but time.
+
+It rides on the small `RECON` grid on purpose — a full-size board with a card
+game in front of every cell would take all night. The soundtrack switches to a
+lounge track while it's active.
+
+The rules live in `packages/game-core/src/casino.ts` and are unit-tested; the
+wager itself is resolved client-side, so a modified client could bypass the
+table. That's an accepted trade for a party mode — making it cheat-proof means
+moving the deal onto the game-server and into the WS contract.
+
+Chording is deliberately *not* gated: it's a move you earn by flagging
+correctly, so it stays free.
+
 Gameplay-wise it's inspired by the classic sweep-the-board puzzle, but the
 visual identity, board design, iconography, sounds and UI are all original —
 see [`AGENTS.md` design notes](./apps/web/AGENTS.md) for how the web app is

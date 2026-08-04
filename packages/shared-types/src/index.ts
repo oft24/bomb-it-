@@ -39,6 +39,12 @@ export interface MatchSettings {
    * the rule (penalties stay forgiving forever).
    */
   maxMistakes: number;
+  /**
+   * Casino mode. Opening a cell first requires beating the house at a randomly
+   * drawn table game (blackjack, roulette or dice). Lose and the click is
+   * forfeited — the cell stays shut. The grid underneath is an ordinary board.
+   */
+  casinoMode: boolean;
   timeLimitSeconds: number | null;
   ranked: boolean;
   spectatorsAllowed: boolean;
@@ -53,6 +59,7 @@ export const DEFAULT_MATCH_SETTINGS: MatchSettings = {
   penaltyMode: "RACE",
   penaltySeconds: 3,
   maxMistakes: 5,
+  casinoMode: false,
   timeLimitSeconds: null,
   ranked: false,
   spectatorsAllowed: true,
