@@ -9,15 +9,18 @@ import { AudioMenu } from "@/components/audio/AudioMenu";
 import { AudioSettings } from "@/components/audio/AudioSettings";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { Trophy, Users, Swords, GraduationCap, Sparkles, Crosshair, ShieldCheck, UserRound, Settings as SettingsIcon } from "lucide-react";
+import { Trophy, Swords, GraduationCap, Sparkles, Crosshair, ShieldCheck, UserRound, Zap, Settings as SettingsIcon } from "lucide-react";
 
 const NAV_ITEMS = ["Play", "Career", "Leaderboards", "Profile", "Settings"];
 
+// Every card here goes somewhere real. Ranked used to sit in this list behind a
+// SOON badge and a click handler that cancelled itself; it needs persisted
+// ratings, which needs the database, so it is out until that exists rather than
+// present as a button that does nothing.
 const MODES = [
-  { label: "Casual", icon: Users, href: "/play", desc: "Jump into an open lobby, no stakes." },
-  { label: "Ranked", icon: Trophy, href: "/play", desc: "Rated matchmaking.", soon: true },
+  { label: "Quick Play", icon: Zap, href: "/play", desc: "Straight into the public lobby closest to filling." },
   { label: "Custom Game", icon: Swords, href: "/play", desc: "Host a private room, invite by code." },
-  { label: "Training", icon: GraduationCap, href: "/play", desc: "Solo drills, no ranking impact.", soon: true },
+  { label: "Training", icon: GraduationCap, href: "/play", desc: "Solo board, starts instantly." },
 ];
 
 export default function HomePage() {
@@ -107,21 +110,12 @@ export default function HomePage() {
             <Link
               key={mode.label}
               href={mode.href}
-              aria-disabled={mode.soon}
-              onClick={(event) => { if (mode.soon) event.preventDefault(); }}
-              className={`group flex flex-col items-start gap-2 rounded-lg border border-border-subtle bg-surface-800/60 p-4 transition-all hover:-translate-y-1 hover:border-border-strong hover:bg-surface-700/60 ${mode.soon ? "cursor-not-allowed opacity-55 hover:translate-y-0" : ""}`}
+              className="group flex flex-col items-start gap-2 rounded-lg border border-border-subtle bg-surface-800/60 p-4 transition-all hover:-translate-y-1 hover:border-border-strong hover:bg-surface-700/60"
             >
               <mode.icon className="size-4 text-ink-500 transition-colors group-hover:text-cyan" />
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wide text-ink-100">
-                  {mode.label}
-                </span>
-                {mode.soon && (
-                  <span className="rounded bg-surface-600 px-1.5 py-0.5 text-[9px] font-bold text-ink-500">
-                    SOON
-                  </span>
-                )}
-              </div>
+              <span className="text-xs font-bold uppercase tracking-wide text-ink-100">
+                {mode.label}
+              </span>
               <span className="text-left text-[11px] leading-snug text-ink-500">{mode.desc}</span>
             </Link>
           ))}

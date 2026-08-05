@@ -80,6 +80,12 @@ interface MatchRuntime {
 export class GameRoom {
   readonly id: RoomId;
   hostId: PlayerId | null = null;
+  /**
+   * Public rooms are the matchmaking pool: Quick Play hands strangers the code
+   * of an open one instead of minting a private room per player. Private rooms
+   * (created from the Play screen) are never offered to anyone else.
+   */
+  isPublic = false;
   state: GameState = "LOBBY";
   settings: MatchSettings = { ...DEFAULT_MATCH_SETTINGS };
   players = new Map<PlayerId, PlayerSession>();
@@ -686,5 +692,32 @@ export class RoomManager {
     for (const [id, room] of this.rooms) {
       if (room.isEmpty() && room.players.size === 0) this.rooms.delete(id);
     }
+  }
+
+  /**
+   * Quick Play matchmaking. Returns the fullest room that still has space and
+   * has not started, so players pile into one lobby rather than scattering
+   * across many half-empty ones. Falls back to opening a fresh public room.
+   *
+   * The room is created here rather than on join so two simultaneous callers
+   * get the same code instead of racing to create separate rooms.
+   */
+  findOrCreateQuickPlayRoom(newCode: () => RoomId): RoomId {
+    let best: GameRoom | null = null;
+    for (const room of this.rooms.values()) {
+      if (!room.isPublic || room.state !== "LOBBY") continue;
+      if (room.players.size >= room.settings.maxPlayers) continue;
+      if (!best || room.players.size > best.players.size) best = room;
+    }
+    if (best) return best.id;
+
+    let id = newCode();
+    while (this.rooms.has(id)) id = newCode();
+    const room = this.getOrCreate(id);
+    room.isPublic = true;
+    // Quick Play wants short, repeatable matches — the small grid, not the
+    // 24x24 default that turns a casual game into a ten-minute commitment.
+    room.settings = { ...room.settings, boardWidth: 12, boardHeight: 12, mineCount: 20 };
+    return id;
   }
 }

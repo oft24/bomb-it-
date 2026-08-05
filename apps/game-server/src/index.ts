@@ -89,6 +89,25 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
 
 const roomManager = new RoomManager(io);
 
+/**
+ * Quick Play: hand back an open public lobby so strangers actually meet, rather
+ * than each minting a private room. Also reports how many are already waiting,
+ * so the client can show real numbers instead of a spinner.
+ *
+ * Registered after `roomManager` exists rather than beside the other routes —
+ * Express would only call it later either way, but depending on that ordering
+ * quietly is the kind of thing that breaks when someone moves a line.
+ */
+app.get("/api/rooms/quick-play", (_req, res) => {
+  const code = roomManager.findOrCreateQuickPlayRoom(generateRoomCode);
+  const room = roomManager.get(code);
+  res.json({
+    code,
+    waiting: room?.players.size ?? 0,
+    maxPlayers: room?.settings.maxPlayers ?? 30,
+  });
+});
+
 interface SocketState {
   roomId: string;
   playerId: string;

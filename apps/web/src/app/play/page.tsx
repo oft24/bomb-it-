@@ -10,7 +10,7 @@ import { RankBadge } from "@/components/ui/RankBadge";
 import { useGameStore, type JoinIdentity } from "@/store/gameStore";
 import { useAuthStore } from "@/store/authStore";
 import { loadGuestName, saveGuestName } from "@/lib/guestIdentity";
-import { ArrowLeft, DoorOpen, Plus, LogOut, UserRound } from "lucide-react";
+import { ArrowLeft, DoorOpen, Plus, LogOut, UserRound, Zap, GraduationCap } from "lucide-react";
 
 const SERVER_URL = process.env.NEXT_PUBLIC_GAME_SERVER_URL ?? "http://localhost:4001";
 const MIN_NAME_LENGTH = 2;
@@ -77,6 +77,44 @@ export default function PlayPage() {
     connectAndJoin(joinCode.trim(), id);
   }
 
+  /** Drops you into whichever public lobby is closest to filling. */
+  async function handleQuickPlay() {
+    const id = identity();
+    if (!id) return;
+    clearError();
+    setSubmitting(true);
+    setNetworkError(null);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/rooms/quick-play`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const { code } = await res.json();
+      setPendingCode(code);
+      connectAndJoin(code, id);
+    } catch {
+      setSubmitting(false);
+      setNetworkError("The game server is waking up or unavailable. Wait a moment and try again.");
+    }
+  }
+
+  /** Solo practice: a private room that starts itself, skipping the lobby wait. */
+  async function handleTraining() {
+    const id = identity();
+    if (!id) return;
+    clearError();
+    setSubmitting(true);
+    setNetworkError(null);
+    try {
+      const res = await fetch(`${SERVER_URL}/api/rooms/new-code`);
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const { code } = await res.json();
+      setPendingCode(code);
+      connectAndJoin(code, id, { autoStart: true });
+    } catch {
+      setSubmitting(false);
+      setNetworkError("The game server is waking up or unavailable. Wait a moment and try again.");
+    }
+  }
+
   return (
     <div className="flex min-h-screen flex-col items-center px-6 py-14">
       <div className="mb-10 flex w-full max-w-md items-center justify-between">
@@ -139,6 +177,29 @@ export default function PlayPage() {
           </p>
         </Panel>
       )}
+
+      <Panel className="mb-4 w-full max-w-md p-6">
+        <Button
+          size="lg"
+          className="w-full"
+          onClick={handleQuickPlay}
+          disabled={!ready || isSubmitting}
+        >
+          <Zap className="size-4" /> {isSubmitting ? "Finding a lobby…" : "Quick Play"}
+        </Button>
+        <p className="mt-2 text-center text-[11px] leading-snug text-ink-500">
+          Drops you straight into the public lobby closest to filling.
+        </p>
+
+        <button
+          type="button"
+          onClick={handleTraining}
+          disabled={!ready || isSubmitting}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md border border-border-subtle bg-surface-700 py-2.5 text-xs font-bold uppercase tracking-wide text-ink-300 transition-colors hover:text-ink-100 disabled:opacity-40"
+        >
+          <GraduationCap className="size-4" /> Training — solo, starts instantly
+        </button>
+      </Panel>
 
       <Panel className="w-full max-w-md p-6">
         <div className="mb-6 flex rounded-md border border-border-subtle bg-bg-900 p-1">

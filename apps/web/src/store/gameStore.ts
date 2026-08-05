@@ -54,8 +54,15 @@ interface GameStoreState {
   resets: number;
   /** Bumped on every wipe so the UI can fire a one-shot "you got wiped" overlay. */
   resetTick: number;
+  /** Training asked to skip the lobby; cleared the moment the match is requested. */
+  pendingAutoStart: boolean;
 
-  connectAndJoin: (roomId: string, identity: JoinIdentity) => void;
+  /**
+   * `autoStart` is for Training: begin the match as soon as the server confirms
+   * we're the host of an idle lobby. Held in the store rather than the page so
+   * it survives the /play -> /lobby navigation that happens in between.
+   */
+  connectAndJoin: (roomId: string, identity: JoinIdentity, options?: { autoStart?: boolean }) => void;
   setReady: (ready: boolean) => void;
   updateSettings: (partial: Partial<MatchSettings>) => void;
   startMatch: () => void;
@@ -85,6 +92,18 @@ export const useGameStore = create<GameStoreState>((set, get) => {
 
     socket.on("room_state", ({ hostId, players, settings, state }) => {
       set({ hostId, players, settings, gameState: state, connectionStatus: "connected" });
+
+      // Training: we asked to skip the lobby, so fire once we're confirmed host.
+      // Cleared before emitting, because `update_settings` triggers another
+      // `room_state` and this branch would otherwise start the match twice.
+      const { pendingAutoStart, localPlayerId } = get();
+      if (pendingAutoStart && state === "LOBBY" && localPlayerId && hostId === localPlayerId) {
+        set({ pendingAutoStart: false });
+        // A solo drill on the 24x24 default is a ten-minute grind. Socket.IO
+        // preserves per-connection order, so the resize lands before the start.
+        socket.emit("update_settings", { boardWidth: 12, boardHeight: 12, mineCount: 20 });
+        socket.emit("start_match");
+      }
     });
 
     socket.on("match_countdown", ({ seconds }) => {
@@ -198,8 +217,9 @@ export const useGameStore = create<GameStoreState>((set, get) => {
     mistakes: 0,
     resets: 0,
     resetTick: 0,
+    pendingAutoStart: false,
 
-    connectAndJoin: (roomId, identity) => {
+    connectAndJoin: (roomId, identity, options) => {
       ensureListeners();
       const socket = getSocket();
       const code = roomId.toUpperCase();
@@ -209,6 +229,7 @@ export const useGameStore = create<GameStoreState>((set, get) => {
         // A guest's id is minted server-side; `joined_room` fills it in.
         localPlayerId: identity.kind === "account" ? identity.playerId : null,
         errorMessage: null,
+        pendingAutoStart: options?.autoStart ?? false,
       });
       if (!socket.connected) socket.connect();
 
