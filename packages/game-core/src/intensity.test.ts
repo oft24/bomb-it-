@@ -29,6 +29,22 @@ test("standing dominates once the field is real", () => {
   assert.equal(podium, 4);
 });
 
+test("a two-player duel opens calm — leading half a field of two means nothing", () => {
+  // Measured in production before this was weighted: leading a duel at 0.8%
+  // produced the same arrangement density as being at 82% of the board.
+  const opening = raceIntensity({ position: 1, totalPlayers: 2, progressPct: 0.8 });
+  assert.ok(opening <= 2, `duel opening should be sparse, got ${opening}`);
+  // And it must still build as the board actually gets cleared.
+  assert.ok(raceIntensity({ position: 1, totalPlayers: 2, progressPct: 60 }) > opening);
+});
+
+test("a podium only counts when there is a field to be on the podium of", () => {
+  const inACrowd = raceIntensity({ position: 3, totalPlayers: 30, progressPct: 10 });
+  const inADuel = raceIntensity({ position: 2, totalPlayers: 2, progressPct: 10 });
+  assert.equal(inACrowd, 4, "third of thirty is a real position");
+  assert.ok(inADuel < inACrowd, "second of two is last, not a podium");
+});
+
 test("a nearly finished board always peaks, wherever you are", () => {
   assert.equal(raceIntensity({ position: 20, totalPlayers: 30, progressPct: 95 }), 5);
 });

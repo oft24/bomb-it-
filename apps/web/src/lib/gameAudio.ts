@@ -636,6 +636,27 @@ export class GameAudio {
 
   // --- casino stingers -------------------------------------------------------
 
+  /**
+   * One pocket passing the pointer. Fired per actual crossing, so the ticks
+   * thin out as the wheel slows instead of running on a fixed loop. Kept very
+   * short and cheap because a single spin fires well over a hundred of these.
+   */
+  wheelTick() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxGain || this.settings.muted || !this.settings.sfxEnabled) return;
+    const at = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    // Slight random detune so a long run of ticks doesn't sound like a machine.
+    osc.frequency.setValueAtTime(2100 + Math.random() * 260, at);
+    gain.gain.setValueAtTime(0.05, at);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.022);
+    osc.connect(gain).connect(this.sfxGain);
+    osc.start(at);
+    osc.stop(at + 0.03);
+  }
+
   /** Dry noise tick — a card sliding off the shoe. */
   cardDeal() {
     const t = this.sfxTime();

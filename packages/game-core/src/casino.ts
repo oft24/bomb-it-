@@ -97,6 +97,53 @@ const RED_NUMBERS = new Set([
 ]);
 export const ROULETTE_POCKETS = 37;
 
+/**
+ * Physical pocket order of a real single-zero wheel, clockwise from the green 0.
+ * Not sorted, and not decorative: the wheel is laid out so that reds and blacks
+ * alternate and consecutive numbers sit opposite each other, which is why a
+ * spin visibly passes through scattered numbers rather than counting upward.
+ * The animation needs this to land on the right pocket.
+ */
+export const WHEEL_ORDER = [
+  0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24,
+  16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26,
+] as const;
+
+/** Degrees of arc each pocket occupies. */
+export const POCKET_ANGLE = 360 / WHEEL_ORDER.length;
+
+/**
+ * Where a given number sits on the wheel, in degrees clockwise from the zero
+ * pocket, measured at the pocket's centre. The renderer rotates by the negative
+ * of this so the pocket finishes under a fixed pointer.
+ */
+export function pocketAngle(n: number): number {
+  const index = WHEEL_ORDER.indexOf(n as (typeof WHEEL_ORDER)[number]);
+  if (index < 0) throw new RangeError(`${n} is not a pocket on this wheel`);
+  return index * POCKET_ANGLE;
+}
+
+/**
+ * Total clockwise rotation that parks pocket `n` under a pointer fixed at the
+ * top, after `turns` full revolutions.
+ *
+ * Shared with the renderer rather than reimplemented there, because getting this
+ * wrong is invisible until someone checks where the wheel actually stopped: the
+ * original version indexed the wheel by face value, so it landed on whichever
+ * pocket happened to sit at that index and almost never on the number it had
+ * just announced.
+ */
+export function landingRotation(n: number, turns: number): number {
+  return 360 * turns + (360 - pocketAngle(n));
+}
+
+/** Which pocket a given total rotation leaves under the pointer. Inverse of `landingRotation`. */
+export function pocketUnderPointer(rotation: number): number {
+  const normalised = ((rotation % 360) + 360) % 360;
+  const index = Math.round(((360 - normalised) % 360) / POCKET_ANGLE) % WHEEL_ORDER.length;
+  return WHEEL_ORDER[index];
+}
+
 export function colorForNumber(n: number): RouletteColor {
   if (n === 0) return "GREEN";
   return RED_NUMBERS.has(n) ? "RED" : "BLACK";

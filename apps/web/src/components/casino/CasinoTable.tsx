@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   drawCard,
@@ -13,6 +13,9 @@ import {
   rollDice,
   settleDice,
   colorForNumber,
+  landingRotation,
+  POCKET_ANGLE,
+  WHEEL_ORDER,
   type CasinoGameKind,
   type PlayingCard,
   type RouletteResult,
@@ -260,33 +263,71 @@ function Blackjack({ phase, setPhase, onFinish }: GameProps) {
 function Roulette({ phase, setPhase, onFinish }: GameProps) {
   const [result, setResult] = useState<RouletteResult | null>(null);
   const [rotation, setRotation] = useState(0);
+  const frame = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+  }, []);
 
   function bet(choice: "RED" | "BLACK") {
     setPhase("RESOLVING");
-    getGameAudio().spin();
     const spun = spinRoulette();
-    setRotation((current) => current + 1440 + (36 - spun.number) * (360 / 37));
-    // Fast tournament pacing: wheel and tick sequence land together.
-    setTimeout(() => {
+
+    // The outcome is decided first; the wheel is told where to stop. Landing is
+    // computed from the pocket's physical position on the wheel, not from its
+    // face value — pocket 32 sits second from the zero, not thirty-second.
+    const from = rotation;
+    const target = from + landingRotation(spun.number, SPIN_TURNS);
+    const start = performance.now();
+    let lastPocket = Math.floor(from / POCKET_ANGLE);
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / SPIN_MS);
+      // Heavy deceleration: quick to speed, then a long crawl into the pocket.
+      const eased = 1 - Math.pow(1 - t, 3.4);
+      const current = from + (target - from) * eased;
+      setRotation(current);
+
+      // One tick per pocket the pointer actually crosses, so the ticking slows
+      // down because the wheel does — not because a loop was told to.
+      const pocket = Math.floor(current / POCKET_ANGLE);
+      if (pocket !== lastPocket) {
+        lastPocket = pocket;
+        getGameAudio().wheelTick();
+      }
+
+      if (t < 1) {
+        frame.current = requestAnimationFrame(step);
+        return;
+      }
       setResult(spun);
       onFinish(settleRoulette(choice, spun) ? "WIN" : "LOSE");
-    }, 1050);
+    };
+    frame.current = requestAnimationFrame(step);
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="relative flex h-52 items-center justify-center overflow-hidden rounded-xl border border-warning/20 bg-[radial-gradient(circle_at_center,#201810_0,#08090b_68%)] shadow-inner">
         <div className="absolute top-2 z-20 h-0 w-0 border-x-[10px] border-t-[18px] border-x-transparent border-t-warning drop-shadow-[0_0_8px_rgba(255,176,32,.8)]" />
-        <motion.div animate={{ rotate: rotation }} transition={{ duration: 1.05, ease: [0.12, 0.72, 0.12, 1] }} className="relative size-40 rounded-full border-[6px] border-[#b98a3f] bg-[repeating-conic-gradient(#c9342f_0deg_9.73deg,#111318_9.73deg_19.46deg)] shadow-[0_0_0_3px_#3c2914,0_10px_35px_#000]">
+        {/* Driven frame by frame rather than by a CSS transition, so the tick
+            sounds can be fired on the pockets the pointer genuinely crosses. */}
+        <div
+          style={{ transform: `rotate(${rotation}deg)`, backgroundImage: WHEEL_GRADIENT }}
+          className="relative size-40 rounded-full border-[6px] border-[#b98a3f] shadow-[0_0_0_3px_#3c2914,0_10px_35px_#000]"
+        >
           <div className="absolute inset-[18%] rounded-full border-2 border-[#d6ad65] bg-[radial-gradient(circle,#9d722f_0_16%,#18120b_17%_44%,#bd8e43_45%_49%,#090a0c_50%)]" />
-          {ROULETTE_LABELS.map((number, index) => {
-            const angle = index * (360 / ROULETTE_LABELS.length);
+          {WHEEL_ORDER.map((number, index) => {
+            const angle = index * POCKET_ANGLE;
             return <span key={number} className="absolute left-1/2 top-1/2 font-hud text-[7px] font-black text-white" style={{ transform: `translate(-50%,-50%) rotate(${angle}deg) translateY(-67px) rotate(${-angle}deg)` }}>{number}</span>;
           })}
-        </motion.div>
-        <motion.div animate={phase === "RESOLVING" ? { rotate: -1080 } : { rotate: 0 }} transition={{ duration: 1.05, ease: [0.12, 0.72, 0.12, 1] }} className="pointer-events-none absolute size-[174px] rounded-full border border-white/10">
+        </div>
+        <div
+          style={{ transform: `rotate(${-rotation * 1.6}deg)` }}
+          className="pointer-events-none absolute size-[174px] rounded-full border border-white/10"
+        >
           <span className="absolute left-1/2 top-1 size-2.5 -translate-x-1/2 rounded-full bg-ink-100 shadow-[0_0_8px_white]" />
-        </motion.div>
+        </div>
         <AnimatePresence>{result && <motion.div initial={{ opacity: 0, scale: .5 }} animate={{ opacity: 1, scale: 1 }} className={cn("absolute bottom-2 z-20 rounded-full px-3 py-1 font-hud text-sm font-black shadow-xl", result.color === "RED" && "bg-danger text-white", result.color === "BLACK" && "bg-bg-950 text-white ring-1 ring-border-strong", result.color === "GREEN" && "bg-success text-bg-950")}>{result.number}</motion.div>}</AnimatePresence>
       </div>
       <p className="text-[11px] text-ink-500">
@@ -304,23 +345,93 @@ function Roulette({ phase, setPhase, onFinish }: GameProps) {
   );
 }
 
-const ROULETTE_LABELS = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+const SPIN_TURNS = 5;
+const SPIN_MS = 2400;
+
+/** Pocket colours painted from the real wheel order, so the felt matches the maths. */
+const WHEEL_GRADIENT = `conic-gradient(${WHEEL_ORDER.map((n, i) => {
+  const colour = colorForNumber(n);
+  const hex = colour === "GREEN" ? "#2e9e6b" : colour === "RED" ? "#c9342f" : "#111318";
+  return `${hex} ${i * POCKET_ANGLE}deg ${(i + 1) * POCKET_ANGLE}deg`;
+}).join(",")})`;
 
 // --- Dice --------------------------------------------------------------------
 
-const PIPS = ["", "⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+/** Pip positions on a 3x3 face grid, as [col, row] with 0 top-left. */
+const PIP_LAYOUT: Record<number, [number, number][]> = {
+  1: [[1, 1]],
+  2: [[0, 0], [2, 2]],
+  3: [[0, 0], [1, 1], [2, 2]],
+  4: [[0, 0], [2, 0], [0, 2], [2, 2]],
+  5: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]],
+  6: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2]],
+};
+
+function DieFace({ value, tumbling }: { value: number; tumbling: boolean }) {
+  return (
+    <div
+      className={cn(
+        "grid size-16 grid-cols-3 grid-rows-3 gap-1 rounded-xl border p-2 transition-colors",
+        tumbling
+          ? "border-warning/50 bg-surface-700 shadow-[0_0_18px_rgba(255,176,32,.3)]"
+          : "border-border-strong bg-ink-100 shadow-[0_6px_18px_rgba(0,0,0,.5)]",
+      )}
+      aria-label={`Die showing ${value}`}
+    >
+      {Array.from({ length: 9 }, (_, i) => {
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        const on = (PIP_LAYOUT[value] ?? []).some(([c, r]) => c === col && r === row);
+        return (
+          <span
+            key={i}
+            className={cn(
+              "rounded-full",
+              on ? (tumbling ? "bg-warning" : "bg-bg-950") : "bg-transparent",
+            )}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+const DICE_TUMBLE_MS = 900;
 
 function Dice({ phase, setPhase, onFinish }: GameProps) {
   const [roll, setRoll] = useState<DiceRoll | null>(null);
+  // What the faces show mid-tumble. Cosmetic only — the real roll is decided up
+  // front and never changes, these are just the faces flashing past.
+  const [tumble, setTumble] = useState<DiceRoll>([1, 1]);
+  const frame = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+  }, []);
 
   function bet(choice: "PAIR" | "NO_PAIR") {
     setPhase("RESOLVING");
     getGameAudio().diceRoll();
     const rolled = rollDice();
-    setTimeout(() => {
+
+    const start = performance.now();
+    let lastSwap = 0;
+    const step = (now: number) => {
+      const elapsed = now - start;
+      // Faces swap fast at first and slow as the dice lose energy.
+      const interval = 45 + (elapsed / DICE_TUMBLE_MS) * 130;
+      if (elapsed - lastSwap >= interval) {
+        lastSwap = elapsed;
+        setTumble([1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)]);
+      }
+      if (elapsed < DICE_TUMBLE_MS) {
+        frame.current = requestAnimationFrame(step);
+        return;
+      }
       setRoll(rolled);
       onFinish(settleDice(choice, rolled) ? "WIN" : "LOSE");
-    }, 800);
+    };
+    frame.current = requestAnimationFrame(step);
   }
 
   return (
@@ -328,24 +439,25 @@ function Dice({ phase, setPhase, onFinish }: GameProps) {
       <div className="flex h-24 items-center justify-center gap-4 rounded-lg border border-border-subtle bg-bg-900">
         {roll ? (
           roll.map((d, i) => (
-            <motion.span
+            <motion.div
               key={i}
-              initial={{ scale: 0.5, rotate: -30, opacity: 0 }}
-              animate={{ scale: 1, rotate: 0, opacity: 1 }}
-              transition={{ delay: i * 0.08 }}
-              className="text-6xl leading-none text-ink-100"
+              initial={{ scale: 0.7, rotate: -18, y: -10 }}
+              animate={{ scale: 1, rotate: 0, y: 0 }}
+              transition={{ delay: i * 0.07, type: "spring", stiffness: 520, damping: 17 }}
             >
-              {PIPS[d]}
-            </motion.span>
+              <DieFace value={d} tumbling={false} />
+            </motion.div>
           ))
         ) : phase === "RESOLVING" ? (
-          <motion.span
-            animate={{ rotate: [0, -20, 20, 0] }}
-            transition={{ repeat: Infinity, duration: 0.3 }}
-            className="text-6xl leading-none text-warning"
-          >
-            🎲
-          </motion.span>
+          tumble.map((d, i) => (
+            <motion.div
+              key={i}
+              animate={{ rotate: [0, -14, 12, 0], y: [0, -7, 3, 0] }}
+              transition={{ repeat: Infinity, duration: 0.28, delay: i * 0.05 }}
+            >
+              <DieFace value={d} tumbling />
+            </motion.div>
+          ))
         ) : (
           <span className="font-hud text-xs uppercase tracking-[0.2em] text-ink-700">
             Call it

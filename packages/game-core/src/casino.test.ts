@@ -15,6 +15,11 @@ import {
   drawCard,
   pickCasinoGame,
   ROULETTE_POCKETS,
+  WHEEL_ORDER,
+  POCKET_ANGLE,
+  pocketAngle,
+  landingRotation,
+  pocketUnderPointer,
   type PlayingCard,
 } from "./casino.js";
 
@@ -99,6 +104,65 @@ test("roulette pays a matching colour bet", () => {
   assert.equal(result.color, "RED");
   assert.equal(settleRoulette("RED", result), true);
   assert.equal(settleRoulette("BLACK", result), false);
+});
+
+test("the wheel holds every pocket exactly once and alternates colour", () => {
+  assert.equal(WHEEL_ORDER.length, ROULETTE_POCKETS);
+  assert.equal(new Set(WHEEL_ORDER).size, ROULETTE_POCKETS, "no duplicate pockets");
+  for (let n = 0; n <= 36; n++) {
+    assert.ok(WHEEL_ORDER.includes(n as (typeof WHEEL_ORDER)[number]), `pocket ${n} missing`);
+  }
+  // A real wheel alternates red and black all the way round, ignoring the zero.
+  const coloured = WHEEL_ORDER.filter((n) => n !== 0);
+  for (let i = 0; i < coloured.length - 1; i++) {
+    const a = colorForNumber(coloured[i]);
+    const b = colorForNumber(coloured[i + 1]);
+    // The single break in the alternation is where the zero was removed.
+    if (Math.abs(WHEEL_ORDER.indexOf(coloured[i]) - WHEEL_ORDER.indexOf(coloured[i + 1])) === 1) {
+      assert.notEqual(a, b, `${coloured[i]} and ${coloured[i + 1]} are both ${a}`);
+    }
+  }
+});
+
+test("pocket angles are distinct, in range, and land the pocket under the pointer", () => {
+  const seen = new Set<number>();
+  for (const n of WHEEL_ORDER) {
+    const angle = pocketAngle(n);
+    assert.ok(angle >= 0 && angle < 360, `angle out of range for ${n}: ${angle}`);
+    assert.ok(!seen.has(angle), `duplicate angle for ${n}`);
+    seen.add(angle);
+  }
+  assert.equal(pocketAngle(0), 0, "zero anchors the wheel");
+  // Adjacent pockets are exactly one pocket-width apart.
+  assert.ok(Math.abs(pocketAngle(WHEEL_ORDER[1]) - POCKET_ANGLE) < 1e-9);
+});
+
+test("the wheel stops on the number it announced — every pocket, every time", () => {
+  // The regression this guards: the original renderer used the face value as a
+  // wheel index, so announcing 32 parked pocket 12 under the pointer.
+  for (const n of WHEEL_ORDER) {
+    for (const turns of [1, 5, 9]) {
+      const rotation = landingRotation(n, turns);
+      assert.equal(
+        pocketUnderPointer(rotation),
+        n,
+        `announced ${n} after ${turns} turns but pocket ${pocketUnderPointer(rotation)} is under the pointer`,
+      );
+    }
+  }
+});
+
+test("landing always spins forward, so the wheel never jerks backwards", () => {
+  for (const n of WHEEL_ORDER) {
+    assert.ok(landingRotation(n, 5) > 0, `non-positive rotation for ${n}`);
+    // Successive spins accumulate, so each must add at least a few turns.
+    assert.ok(landingRotation(n, 5) >= 360 * 4, `too short a spin for ${n}`);
+  }
+});
+
+test("pocketAngle rejects numbers that are not on the wheel", () => {
+  assert.throws(() => pocketAngle(37), RangeError);
+  assert.throws(() => pocketAngle(-1), RangeError);
 });
 
 test("dice settle pair and no-pair bets symmetrically", () => {

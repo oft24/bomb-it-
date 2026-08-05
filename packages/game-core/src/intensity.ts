@@ -38,11 +38,17 @@ export function raceIntensity({ position, totalPlayers, progressPct }: RaceSnaps
   // first place ten seconds in is noise, not a position.
   if (place === 1 && progress >= 45) return 5;
   if (progress >= 90) return 5;
-  if (place <= 3) return 4;
+
+  // A podium only means something when there is a field to be on the podium of.
+  // In a duel, "second of two" is last place, not a near miss — so in small
+  // fields progress carries the build and standing barely registers.
+  const PODIUM_NEEDS_A_FIELD = 6;
+  if (totalPlayers >= PODIUM_NEEDS_A_FIELD && place <= 3) return 4;
+  if (progress >= 70) return 4;
 
   const fraction = place / totalPlayers;
-  if (fraction <= 0.34 || progress >= 60) return 3;
-  if (fraction <= 0.67 || progress >= 30) return 2;
+  if (fraction <= 0.34 || progress >= 45) return 3;
+  if (fraction <= 0.67 || progress >= 20) return 2;
   return 1;
 }
 
