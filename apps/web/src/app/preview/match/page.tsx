@@ -101,7 +101,7 @@ export default function MatchPreviewPage() {
   const progress = mockProgress(24, "You");
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    <div className="flex h-svh flex-col overflow-hidden">
       <MatchHud
         position={1}
         totalPlayers={24}
@@ -118,7 +118,7 @@ export default function MatchPreviewPage() {
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-5 overflow-hidden p-5">
         <div className="relative flex flex-[3] items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-800/40 p-4">
-          <div className="w-full max-w-[min(85vh,100%)]">
+          <div className="w-full max-w-[min(85svh,100%)]">
             <Board
               width={WIDTH}
               height={HEIGHT}

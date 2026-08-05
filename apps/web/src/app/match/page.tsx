@@ -119,7 +119,10 @@ export default function MatchPage() {
   const matchEndedWithoutLocalFinish = gameState === "FINISHED" && localProgress?.state !== "FINISHED";
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden">
+    // svh, not vh: `100vh` on a phone is the height with the browser chrome
+    // hidden, so the match screen is taller than what you can actually see until
+    // the URL bar collapses — and then the whole layout resizes mid-game.
+    <div className="flex h-svh flex-col overflow-hidden">
       <MatchHud
         position={position}
         totalPlayers={totalPlayers}
@@ -136,7 +139,10 @@ export default function MatchPage() {
 
       <div className="mx-auto flex w-full max-w-[1600px] flex-1 gap-5 overflow-hidden p-5">
         <div className="relative flex flex-[3] items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-800/40 p-4">
-          <div className="w-full max-w-[min(85vh,100%)]">
+          {/* Sized off svh so the grid keeps one size for the whole match. With
+              vh the board silently rescales the moment the browser chrome moves,
+              which reads as the game changing resolution under you. */}
+          <div className="w-full max-w-[min(85svh,100%)]">
             <Board
               width={matchInfo.width}
               height={matchInfo.height}
