@@ -264,14 +264,32 @@ function Roulette({ phase, setPhase, onFinish }: GameProps) {
   const [result, setResult] = useState<RouletteResult | null>(null);
   const [rotation, setRotation] = useState(0);
   const frame = useRef<number | null>(null);
+  const settled = useRef(false);
+  const safety = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
+    if (safety.current) clearTimeout(safety.current);
   }, []);
 
   function bet(choice: "RED" | "BLACK") {
     setPhase("RESOLVING");
     const spun = spinRoulette();
+    const won = settleRoulette(choice, spun);
+
+    // rAF stops in a background tab, so the animation alone cannot be trusted to
+    // finish the wager — switching tabs mid-spin would leave the board locked
+    // behind a frozen modal. This resolves it regardless of whether frames ran.
+    const resolve = () => {
+      if (settled.current) return;
+      settled.current = true;
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      if (safety.current) clearTimeout(safety.current);
+      setRotation(rotation + landingRotation(spun.number, SPIN_TURNS));
+      setResult(spun);
+      onFinish(won ? "WIN" : "LOSE");
+    };
+    safety.current = setTimeout(resolve, SPIN_MS + 400);
 
     // The outcome is decided first; the wheel is told where to stop. Landing is
     // computed from the pocket's physical position on the wheel, not from its
@@ -300,8 +318,7 @@ function Roulette({ phase, setPhase, onFinish }: GameProps) {
         frame.current = requestAnimationFrame(step);
         return;
       }
-      setResult(spun);
-      onFinish(settleRoulette(choice, spun) ? "WIN" : "LOSE");
+      resolve();
     };
     frame.current = requestAnimationFrame(step);
   }
@@ -404,15 +421,31 @@ function Dice({ phase, setPhase, onFinish }: GameProps) {
   // front and never changes, these are just the faces flashing past.
   const [tumble, setTumble] = useState<DiceRoll>([1, 1]);
   const frame = useRef<number | null>(null);
+  const settled = useRef(false);
+  const safety = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
+    if (safety.current) clearTimeout(safety.current);
   }, []);
 
   function bet(choice: "PAIR" | "NO_PAIR") {
     setPhase("RESOLVING");
     getGameAudio().diceRoll();
     const rolled = rollDice();
+    const won = settleDice(choice, rolled);
+
+    // Same reason as the wheel: a backgrounded tab freezes rAF, and a wager that
+    // never resolves locks the board.
+    const resolve = () => {
+      if (settled.current) return;
+      settled.current = true;
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      if (safety.current) clearTimeout(safety.current);
+      setRoll(rolled);
+      onFinish(won ? "WIN" : "LOSE");
+    };
+    safety.current = setTimeout(resolve, DICE_TUMBLE_MS + 400);
 
     const start = performance.now();
     let lastSwap = 0;
@@ -428,8 +461,7 @@ function Dice({ phase, setPhase, onFinish }: GameProps) {
         frame.current = requestAnimationFrame(step);
         return;
       }
-      setRoll(rolled);
-      onFinish(settleDice(choice, rolled) ? "WIN" : "LOSE");
+      resolve();
     };
     frame.current = requestAnimationFrame(step);
   }
