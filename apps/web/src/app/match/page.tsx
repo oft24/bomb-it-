@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { pickCasinoGame, type CasinoGameKind } from "@sectorzero/game-core";
+import { pickCasinoGame, raceIntensity, type CasinoGameKind } from "@sectorzero/game-core";
 import { useGameStore } from "@/store/gameStore";
 import { CasinoTable } from "@/components/casino/CasinoTable";
 import { Board } from "@/components/board/Board";
@@ -58,6 +58,10 @@ export default function MatchPage() {
     getGameAudio().setTrack(settings.casinoMode ? "CASINO" : "ARCADE");
   }, [settings.casinoMode]);
 
+  // Back down to a calm bed when the match screen goes away, so the menu isn't
+  // still playing the final-push arrangement.
+  useEffect(() => () => getGameAudio().setIntensity(1), []);
+
   // Casino mode puts a table game between the click and the reveal. The wager is
   // held here rather than in the store because it's purely local ceremony — the
   // server only ever hears about the reveal that a win produces.
@@ -95,6 +99,18 @@ export default function MatchPage() {
   const position = Math.max(1, ranked.findIndex((p) => p.id === localPlayerId) + 1);
   const totalPlayers = progress.length || players.length;
   const localPing = players.find((p) => p.id === localPlayerId)?.ping ?? 0;
+
+  // The arrangement thickens as the race gets dangerous, so you hear that
+  // someone is closing on you slightly before you read it in the standings.
+  const intensity = raceIntensity({
+    position,
+    totalPlayers,
+    progressPct: localProgress?.progressPct ?? 0,
+  });
+
+  useEffect(() => {
+    getGameAudio().setIntensity(intensity);
+  }, [intensity]);
 
   if (!roomId || !matchInfo) return null;
 
