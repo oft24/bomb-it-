@@ -10,8 +10,12 @@
 
 -- === Tables (from Prisma schema) ============================================
 
+-- id is UUID, not TEXT: it carries the Supabase auth user id and is a foreign
+-- key onto auth.users(id), which is uuid. Postgres will not build a foreign key
+-- between text and uuid, so the earlier TEXT version of this file could never
+-- have been applied — it failed with 42804 on the profiles_id_fkey statement.
 CREATE TABLE IF NOT EXISTS "profiles" (
-    "id" TEXT NOT NULL,
+    "id" UUID NOT NULL,
     "username" TEXT NOT NULL,
     "rating" INTEGER NOT NULL DEFAULT 1000,
     "level" INTEGER NOT NULL DEFAULT 1,
@@ -38,7 +42,8 @@ CREATE TABLE IF NOT EXISTS "matches" (
 CREATE TABLE IF NOT EXISTS "match_players" (
     "id" TEXT NOT NULL,
     "match_id" TEXT NOT NULL,
-    "profile_id" TEXT,
+    -- Must match profiles.id exactly, for the same foreign-key reason.
+    "profile_id" UUID,
     "username" TEXT NOT NULL,
     "placement" INTEGER NOT NULL,
     "finish_time_ms" INTEGER,
@@ -117,8 +122,10 @@ CREATE POLICY "Profiles are publicly readable" ON "profiles"
   FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Users can update their own profile" ON "profiles";
+-- No ::text cast: both sides are uuid now, and casting one of them made this
+-- fail with 42883 (operator does not exist: text = uuid).
 CREATE POLICY "Users can update their own profile" ON "profiles"
-  FOR UPDATE USING (auth.uid()::text = id);
+  FOR UPDATE USING (auth.uid() = id);
 
 DROP POLICY IF EXISTS "Matches are publicly readable" ON "matches";
 CREATE POLICY "Matches are publicly readable" ON "matches"

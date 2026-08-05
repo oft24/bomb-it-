@@ -11,7 +11,9 @@ datasource db {
 /// a separately generated key. Row is created by a DB trigger on signup
 /// (see supabase/schema.sql), so the app never has to race that insert.
 model Profile {
-  id        String   @id
+  // @db.Uuid because this column is a foreign key onto auth.users(id), which is
+  // uuid. Without it Prisma emits TEXT and the constraint cannot be created.
+  id        String   @id @db.Uuid
   username  String   @unique
   rating    Int      @default(1000)
   level     Int      @default(1)
@@ -43,7 +45,7 @@ model MatchPlayer {
   id           String  @id @default(uuid())
   matchId      String  @map("match_id")
   match        Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  profileId    String? @map("profile_id")
+  profileId    String? @map("profile_id") @db.Uuid
   profile      Profile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
   username     String
   placement    Int
