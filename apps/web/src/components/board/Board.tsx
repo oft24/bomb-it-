@@ -112,6 +112,15 @@ export function Board({
       )}
       style={{
         gridTemplateColumns: `repeat(${width}, minmax(0, 1fr))`,
+        // Rows must be declared too. Left implicit they size to their content,
+        // and revealing a mine drops an SVG into a cell whose percentage height
+        // has no definite row to resolve against — so it falls back to the
+        // icon's intrinsic size, that row inflates, and every other row is
+        // squeezed to keep the container's aspect ratio. Measured: one
+        // detonation took the grid from a single 10.08px row height to rows of
+        // 14.20px with cells at four different sizes, which is what made the
+        // board look like it was crawling.
+        gridTemplateRows: `repeat(${height}, minmax(0, 1fr))`,
         aspectRatio: `${width} / ${height}`,
       }}
     >

@@ -35,7 +35,10 @@ function CellImpl({ x, y, status, adjacentMines, isSafeZone }: CellProps) {
               : `Cell ${x},${y}: closed`
       }
       className={cn(
-        "relative flex items-center justify-center select-none",
+        // overflow-hidden so nothing a cell draws can ever spill out and be
+        // measured by the grid; min-w/h-0 so the button itself never claims a
+        // minimum bigger than its track.
+        "relative flex min-h-0 min-w-0 items-center justify-center overflow-hidden select-none",
         "text-[clamp(9px,1.6vw,15px)] font-bold font-hud leading-none",
         "border transition-colors duration-100",
         status === "closed" &&
@@ -50,14 +53,18 @@ function CellImpl({ x, y, status, adjacentMines, isSafeZone }: CellProps) {
       )}
       style={isNumbered ? { color: NUMBER_COLOR[adjacentMines!] } : undefined}
     >
+      {/* Icons are taken out of flow: an in-flow SVG contributes its intrinsic
+          size to row sizing, which is what let a single reveal resize the whole
+          board. Absolute positioning means a cell's contents can never feed
+          back into the grid's track sizes. */}
       {status === "flagged" && (
-        <svg viewBox="0 0 16 16" className="size-[62%] text-cyan" fill="none">
+        <svg viewBox="0 0 16 16" className="absolute inset-[19%] size-[62%] text-cyan" fill="none">
           <path d="M4 1.5v13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
           <path d="M4 2.2h7.2c.8 0 1.1.8.5 1.3L9.4 5.4l2.3 1.9c.6.5.3 1.3-.5 1.3H4" fill="currentColor" opacity="0.9" />
         </svg>
       )}
       {status === "exploded" && (
-        <svg viewBox="0 0 16 16" className="size-[64%]" fill="none">
+        <svg viewBox="0 0 16 16" className="absolute inset-[18%] size-[64%]" fill="none">
           <polygon
             points="8,1 10.2,5.4 15,6 11.3,9.2 12.2,14 8,11.6 3.8,14 4.7,9.2 1,6 5.8,5.4"
             fill="var(--color-danger)"
